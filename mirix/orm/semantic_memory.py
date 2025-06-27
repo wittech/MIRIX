@@ -4,7 +4,8 @@ from sqlalchemy.orm import Mapped, mapped_column, declared_attr, relationship
 from mirix.orm.sqlalchemy_base import SqlalchemyBase
 from mirix.orm.mixins import OrganizationMixin
 from mirix.schemas.semantic_memory import SemanticMemoryItem as PydanticSemanticMemoryItem
-import datetime
+from datetime import datetime
+import datetime as dt
 from mirix.orm.custom_columns import CommonVector, EmbeddingConfigColumn
 from mirix.constants import MAX_EMBEDDING_DIM
 from mirix.settings import settings
@@ -21,15 +22,15 @@ class SemanticMemoryItem(SqlalchemyBase, OrganizationMixin):
 
     Attributes:
         id: Unique ID for this semantic memory entry.
-        concept: The title or primary concept (e.g., "Simulated Reality", "Quantum Mechanics").
-        definition: A concise definition or summary of the concept.
+        name: The name of the concept or the object (e.g., "MemoryLLM", "Jane").
+        summary: A concise summary of the concept or the object.
         details: A more detailed explanation or contextual description.
         source: The reference or origin of the information (e.g., book, article, movie).
         metadata_: Arbitrary additional metadata as a JSON object.
         created_at: Timestamp indicating when the entry was created.
     """
 
-    __tablename__ = "semantic_memory_items"
+    __tablename__ = "semantic_memory"
     __pydantic_model__ = PydanticSemanticMemoryItem
 
     # Primary key
@@ -39,32 +40,36 @@ class SemanticMemoryItem(SqlalchemyBase, OrganizationMixin):
         doc="Unique ID for this semantic memory entry"
     )
 
-    # The title or main concept of the knowledge entry
-    concept: Mapped[str] = mapped_column(
+    # The name of the concept or the object
+    name: Mapped[str] = mapped_column(
         String,
-        nullable=False,
-        doc="The title or primary concept for the knowledge entry"
+        doc="The title or main concept for the knowledge entry"
     )
 
-    # A brief definition or summary of the concept
-    definition: Mapped[str] = mapped_column(
+    # A concise summary of the concept
+    summary: Mapped[str] = mapped_column(
         String,
-        nullable=True,
-        doc="A concise definition or summary of the concept"
+        doc="A concise summary of the concept or the object."
     )
 
     # Detailed explanation or extended context about the concept
     details: Mapped[str] = mapped_column(
         String,
-        nullable=True,
         doc="Detailed explanation or additional context for the concept"
     )
 
     # Reference or source of the general knowledge (e.g., book, article, or movie)
     source: Mapped[str] = mapped_column(
         String,
-        nullable=True,
         doc="The reference or origin of this information (e.g., book, article, or movie)"
+    )
+
+    # Hierarchical tree path for categorization (e.g., ["favorites", "pets", "dog"])
+    tree_path: Mapped[list] = mapped_column(
+        JSON,
+        default=list,
+        nullable=False,
+        doc="Hierarchical categorization path as an array of strings (e.g., ['favorites', 'pets', 'dog'])"
     )
 
     # Additional arbitrary metadata stored as a JSON object
@@ -75,10 +80,18 @@ class SemanticMemoryItem(SqlalchemyBase, OrganizationMixin):
         doc="Additional arbitrary metadata as a JSON object"
     )
 
+    # When was this item last modified and what operation?
+    last_modify: Mapped[dict] = mapped_column(
+        JSON,
+        nullable=False,
+        default=lambda: {"timestamp": datetime.now(dt.timezone.utc).isoformat(), "operation": "created"},
+        doc="Last modification info including timestamp and operation type"
+    )
+
     # Timestamp indicating when this entry was created
     created_at: Mapped[DateTime] = mapped_column(
         DateTime,
-        default=datetime.datetime.utcnow,
+        default=lambda: datetime.now(dt.timezone.utc),
         nullable=False,
         doc="Timestamp when this semantic memory entry was created"
     )
@@ -89,12 +102,12 @@ class SemanticMemoryItem(SqlalchemyBase, OrganizationMixin):
     if settings.mirix_pg_uri_no_default:
         from pgvector.sqlalchemy import Vector
         details_embedding = mapped_column(Vector(MAX_EMBEDDING_DIM))
-        concept_embedding = mapped_column(Vector(MAX_EMBEDDING_DIM))
-        definition_embedding = mapped_column(Vector(MAX_EMBEDDING_DIM))
+        name_embedding = mapped_column(Vector(MAX_EMBEDDING_DIM))
+        summary_embedding = mapped_column(Vector(MAX_EMBEDDING_DIM))
     else:
         details_embedding = Column(CommonVector)
-        concept_embedding = Column(CommonVector)
-        definition_embedding = Column(CommonVector)
+        name_embedding = Column(CommonVector)
+        summary_embedding = Column(CommonVector)
 
     @declared_attr
     def organization(cls) -> Mapped["Organization"]:
@@ -104,6 +117,6 @@ class SemanticMemoryItem(SqlalchemyBase, OrganizationMixin):
         """
         return relationship(
             "Organization",
-            back_populates="semantic_memory_items",
+            back_populates="semantic_memory",
             lazy="selectin"
         )

@@ -61,7 +61,7 @@ from mirix.services.block_manager import BlockManager
 from mirix.services.message_manager import MessageManager
 from mirix.services.organization_manager import OrganizationManager
 from mirix.services.knowledge_vault_manager import KnowledgeVaultManager
-from mirix.services.episodic_event_manager import EpisodicMemoryManager
+from mirix.services.episodic_memory_manager import EpisodicMemoryManager
 from mirix.services.procedural_memory_manager import ProceduralMemoryManager
 from mirix.services.resource_memory_manager import ResourceMemoryManager
 from mirix.services.semantic_memory_manager import SemanticMemoryManager
@@ -180,9 +180,8 @@ def db_error_handler():
         # raise ValueError(f"SQLite DB error: {str(e)}")
         exit(1)
 
-
-print("Creating engine", settings.mirix_pg_uri)
 if settings.mirix_pg_uri_no_default:
+    print("Creating engine", settings.mirix_pg_uri)
     config.recall_storage_type = "postgres"
     config.recall_storage_uri = settings.mirix_pg_uri_no_default
     config.archival_storage_type = "postgres"
@@ -197,6 +196,9 @@ if settings.mirix_pg_uri_no_default:
         pool_recycle=settings.pg_pool_recycle,
         echo=settings.pg_echo,
     )
+    
+    # Create all tables for PostgreSQL
+    Base.metadata.create_all(bind=engine)
 else:
     # TODO: don't rely on config storage
     engine = create_engine("sqlite:///" + os.path.join(config.recall_storage_path, "sqlite.db"))
@@ -226,7 +228,7 @@ else:
     engine.connect = wrapped_connect
 
     Base.metadata.create_all(bind=engine)
-
+    
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
@@ -289,8 +291,8 @@ class SyncServer(Server):
         self.step_manager = StepManager()
 
         # Newly added managers
-        self.knowledgevault_manager = KnowledgeVaultManager()
-        self.episodic_event_manager =  EpisodicMemoryManager()
+        self.knowledge_vault_manager = KnowledgeVaultManager()
+        self.episodic_memory_manager =  EpisodicMemoryManager()
         self.procedural_memory_manager = ProceduralMemoryManager()
         self.resource_memory_manager = ResourceMemoryManager()
         self.semantic_memory_manager = SemanticMemoryManager()
@@ -400,7 +402,7 @@ class SyncServer(Server):
             agent_state = self.agent_manager.get_agent_by_id(agent_id=agent_id, actor=actor)
 
             interface = interface or self.default_interface_factory()
-            if agent_state.agent_type == AgentType.memgpt_agent:
+            if agent_state.agent_type == AgentType.chat_agent:
                 agent = Agent(agent_state=agent_state, interface=interface, user=actor)
             elif agent_state.agent_type == AgentType.episodic_memory_agent:
                 agent = EpisodicMemoryAgent(agent_state=agent_state, interface=interface, user=actor)
@@ -427,20 +429,16 @@ class SyncServer(Server):
         agent_id: str,
         input_messages: Union[Message, List[Message]],
         interface: Union[AgentInterface, None] = None,  # needed to getting responses
-        image_uris: Optional[List[str]] = None,
-        swebench_tools_and_envs: Optional[Dict] = None,
+        put_inner_thoughts_first: bool = True,
+        existing_file_uris: Optional[List[str]] = None,
         force_response: bool = False,
-        extra_messages: Union[List[MessageCreate], List[Message]] = None,
-        retrieved_memories: str = None
+        display_intermediate_message: any = None,
+        chaining: Optional[bool] = None,
+        extra_messages: Optional[List[dict]] = None,
+        message_queue: Optional[any] = None,
+        retrieved_memories: Optional[dict] = None,
     ) -> MirixUsageStatistics:
         """Send the input message through the agent"""
-        # TODO: Thread actor directly through this function, since the top level caller most likely already retrieved the user
-        # Input validation
-        if isinstance(input_messages, Message):
-            input_messages = [input_messages]
-        if not all(isinstance(m, Message) for m in input_messages):
-            raise ValueError(f"messages should be a Message or a list of Message, got {type(input_messages)}")
-
         logger.debug(f"Got input messages: {input_messages}")
         mirix_agent = None
         try:
@@ -457,18 +455,22 @@ class SyncServer(Server):
             else:
                 metadata = None
 
+            # Use provided chaining value or fall back to server default
+            effective_chaining = chaining if chaining is not None else self.chaining
+
             usage_stats = mirix_agent.step(
-                messages=input_messages,
-                chaining=self.chaining,
+                input_messages=input_messages,
+                chaining=effective_chaining,
                 max_chaining_steps=self.max_chaining_steps,
                 stream=token_streaming,
                 skip_verify=True,
                 metadata=metadata,
-                image_uris=image_uris,
-                swebench_tools_and_envs=swebench_tools_and_envs,
                 force_response=force_response,
+                existing_file_uris=existing_file_uris,
+                display_intermediate_message=display_intermediate_message,
+                put_inner_thoughts_first=put_inner_thoughts_first,
                 extra_messages=extra_messages,
-                retrieved_memories=retrieved_memories
+                message_queue=message_queue,
             )
 
         except Exception as e:
@@ -704,84 +706,39 @@ class SyncServer(Server):
         self,
         actor: User,
         agent_id: str,
-        messages: Union[List[MessageCreate], List[Message]],
-        # whether or not to wrap user and system message as MemGPT-style stringified JSON
-        wrap_user_message: bool = False,
-        wrap_system_message: bool = True,
-        interface: Union[AgentInterface, None] = None,  # needed to getting responses
+        input_messages: List[MessageCreate],
+        interface: Union[AgentInterface, None] = None,  # needed for responses
         metadata: Optional[dict] = None,  # Pass through metadata to interface
-        image_uris: Optional[List[str]] = None,
-        swebench_tools_and_envs: Optional[Dict] = None,
+        put_inner_thoughts_first: bool = True,
+        display_intermediate_message: callable = None,
         force_response: bool = False,
-        extra_messages: Union[List[MessageCreate], List[Message]] = None,
-        retrieved_memories: str = None,
+        chaining: Optional[bool] = True,
+        existing_file_uris: Optional[List[str]] = None,
+        extra_messages: Optional[List[dict]] = None,
+        message_queue: Optional[any] = None,
+        retrieved_memories: Optional[dict] = None,
     ) -> MirixUsageStatistics:
-        """Send a list of messages to the agent
-
-        If the messages are of type MessageCreate, we need to turn them into
-        Message objects first before sending them through step.
-
-        Otherwise, we can pass them in directly.
-        """
-        message_objects: List[Message] = []
-
-        if all(isinstance(m, MessageCreate) for m in messages):
-            for message in messages:
-                assert isinstance(message, MessageCreate)
-
-                # If wrapping is eanbled, wrap with metadata before placing content inside the Message object
-                if message.role == MessageRole.user :
-                    if wrap_user_message:
-                        message.text = system.package_user_message(user_message=message.text)
-                elif message.role == MessageRole.system and wrap_system_message:
-                    message.text = system.package_system_message(system_message=message.text)
-                else:
-                    raise ValueError(f"Invalid message role: {message.role}")
-
-                # Create the Message object
-                message_objects.append(
-                    Message(
-                        agent_id=agent_id,
-                        role=message.role,
-                        text=message.text,
-                        name=message.name,
-                        # assigned later?
-                        model=None,
-                        # irrelevant
-                        tool_calls=None,
-                        tool_call_id=None,
-                    )
-                )
-
-            if extra_messages is None:
-                extra_message_objects = None
-            else:
-                extra_message_objects = []
-                for e_m in extra_messages:
-                    tmp_e_m = Message(agent_id=agent_id, role=MessageRole("user"), text=e_m['image'], name=None)
-                    tmp_e_m.created_at = datetime.strptime(e_m['timestamp'], '%Y-%m-%d %H:%M:%S').replace(tzinfo=timezone.utc)
-                    extra_message_objects.append(tmp_e_m)
-                extra_message_objects = None if len(extra_message_objects) == 0 else extra_message_objects
-
-        elif all(isinstance(m, Message) for m in messages):
-            for message in messages:
-                assert isinstance(message, Message)
-                message_objects.append(message)
-            
-            # TODO: the following is not used so not sure if it is correct
-            extra_message_objects = extra_messages
-
-        else:
-            raise ValueError(f"All messages must be of type Message or MessageCreate, got {[type(message) for message in messages]}")
+        """Send a list of messages to the agent."""
 
         # Store metadata in interface if provided
         if metadata and hasattr(interface, "metadata"):
             interface.metadata = metadata
 
         # Run the agent state forward
-        return self._step(actor=actor, agent_id=agent_id, input_messages=message_objects, interface=interface, 
-                          image_uris=image_uris, swebench_tools_and_envs=swebench_tools_and_envs, 
-                          force_response=force_response, extra_messages=extra_message_objects, retrieved_memories=retrieved_memories)
+        return self._step(
+            actor=actor,
+            agent_id=agent_id,
+            input_messages=input_messages,
+            interface=interface,
+            force_response=force_response,
+            put_inner_thoughts_first=put_inner_thoughts_first,
+            display_intermediate_message=display_intermediate_message,
+            chaining=chaining,
+            existing_file_uris=existing_file_uris,
+            extra_messages=extra_messages,
+            message_queue=message_queue,
+            retrieved_memories=retrieved_memories
+        )
 
     # @LockingServer.agent_lock_decorator
     def run_command(self, user_id: str, agent_id: str, command: str) -> MirixUsageStatistics:

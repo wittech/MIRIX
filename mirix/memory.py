@@ -7,6 +7,7 @@ from mirix.schemas.agent import AgentState
 from mirix.schemas.enums import MessageRole
 from mirix.schemas.memory import Memory
 from mirix.schemas.message import Message
+from mirix.schemas.mirix_message_content import TextContent
 from mirix.settings import summarizer_settings
 from mirix.utils import count_tokens, printd
 
@@ -36,7 +37,21 @@ def get_memory_functions(cls: Memory) -> Dict[str, Callable]:
 
 def _format_summary_history(message_history: List[Message]):
     # TODO use existing prompt formatters for this (eg ChatML)
-    return "\n".join([f"{m.role}: {m.text}" for m in message_history])
+    def format_message(m: Message):
+        content_str = ''
+        for content in m.content:
+            if content.type == 'text':
+                content_str += content.text + "\n"
+            elif content.type == 'image_url':
+                content_str += f"[Image: {content.image_id}]" + "\n"
+            elif content.type == 'file_uri':
+                content_str += f"[File: {content.file_id}]" + "\n"
+            elif content.type == 'google_cloud_file_uri':
+                content_str += f"[Cloud File: {content.cloud_file_uri}]" + "\n"
+            else:
+                content_str += f"[Unknown content type: {content.type}]" + "\n"
+        return content_str.strip()
+    return "\n\n".join([f"{m.role}: {format_message(m)}" for m in message_history])
 
 
 def summarize_messages(
@@ -60,9 +75,9 @@ def summarize_messages(
 
     dummy_agent_id = agent_state.id
     message_sequence = [
-        Message(agent_id=dummy_agent_id, role=MessageRole.system, text=summary_prompt),
-        Message(agent_id=dummy_agent_id, role=MessageRole.assistant, text=MESSAGE_SUMMARY_REQUEST_ACK),
-        Message(agent_id=dummy_agent_id, role=MessageRole.user, text=summary_input),
+        Message(agent_id=dummy_agent_id, role=MessageRole.system, content=[TextContent(text=summary_prompt)]),
+        Message(agent_id=dummy_agent_id, role=MessageRole.assistant, content=[TextContent(text=MESSAGE_SUMMARY_REQUEST_ACK)]),
+        Message(agent_id=dummy_agent_id, role=MessageRole.user, content=[TextContent(text=summary_input)]),
     ]
 
     # TODO: We need to eventually have a separate LLM config for the summarizer LLM
@@ -70,7 +85,6 @@ def summarize_messages(
     llm_config_no_inner_thoughts.put_inner_thoughts_in_kwargs = False
     response = create(
         llm_config=llm_config_no_inner_thoughts,
-        user_id=agent_state.created_by_id,
         messages=message_sequence,
         stream=False,
         summarizing=True

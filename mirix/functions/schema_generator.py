@@ -233,6 +233,28 @@ def pydantic_model_to_json_schema(model: Type[BaseModel]) -> dict:
 
         if "description" not in prop:
             raise ValueError(f"Property {prop} lacks a 'description' key")
+        
+        # Handle anyOf structures (e.g., for Optional[List[str]])
+        if "anyOf" in prop:
+            # For anyOf, we'll choose the first non-null type
+            for option in prop["anyOf"]:
+                if option.get("type") != "null":
+                    result = {
+                        "type": option["type"],
+                        "description": prop["description"],
+                    }
+                    # Only include items for array types
+                    if option["type"] == "array" and "items" in option:
+                        result["items"] = option["items"]
+                    return result
+            # If all options are null, default to string
+            return {
+                "type": "string",
+                "description": prop["description"],
+            }
+        
+        if "type" not in prop:
+            raise ValueError(f"Property {prop} lacks a 'type' key")
 
         return {
             "type": "string" if prop["type"] == "string" else prop["type"],
@@ -273,16 +295,19 @@ def pydantic_model_to_json_schema(model: Type[BaseModel]) -> dict:
 
             properties = {}
             for name, prop in schema_part["properties"].items():
-                if "items" in prop:  # Handle arrays
-                    if "description" not in prop:
-                        raise ValueError(f"Property {prop} lacks a 'description' key")
-                    properties[name] = {
-                        "type": "array",
-                        "items": clean_schema(prop["items"], full_schema),
-                        "description": prop["description"],
-                    }
-                else:
-                    properties[name] = clean_property(prop)
+                try:
+                    if "items" in prop:  # Handle arrays
+                        if "description" not in prop:
+                            raise ValueError(f"Property {prop} lacks a 'description' key")
+                        properties[name] = {
+                            "type": "array",
+                            "items": clean_schema(prop["items"], full_schema),
+                            "description": prop["description"],
+                        }
+                    else:
+                        properties[name] = clean_property(prop)
+                except Exception as e:
+                    raise ValueError(f"Error processing property '{name}': {prop}. Error: {e}")
 
             pydantic_model_schema_dict = {
                 "type": "object",
@@ -295,6 +320,10 @@ def pydantic_model_to_json_schema(model: Type[BaseModel]) -> dict:
             return pydantic_model_schema_dict
 
         # Handle primitive types
+        # If it's a simple type definition without description (like {'type': 'string'}), 
+        # return it as-is since it doesn't need cleaning
+        if "description" not in schema_part and len(schema_part) == 1 and "type" in schema_part:
+            return schema_part
         return clean_property(schema_part)
     
     response = clean_schema(schema_part=schema, full_schema=schema)
@@ -332,7 +361,9 @@ def generate_schema(function, name: Optional[str] = None, description: Optional[
 
         # Assert that the parameter has a description
         if not param_doc or not param_doc.description:
+            import ipdb; ipdb.set_trace()
             raise ValueError(f"Parameter '{param.name}' in function '{function.__name__}' lacks a description in the docstring")
+
 
         # If the parameter is a pydantic model, we need to unpack the Pydantic model type into a JSON schema object
         # if inspect.isclass(param.annotation) and issubclass(param.annotation, BaseModel):
@@ -354,7 +385,9 @@ def generate_schema(function, name: Optional[str] = None, description: Optional[
             # Grab the description for the parameter from the extended docstring
             # If it doesn't exist, we should raise an error
             param_doc = next((d for d in docstring.params if d.arg_name == param.name), None)
+                
             if not param_doc:
+                import ipdb; ipdb.set_trace()
                 raise ValueError(f"Parameter '{param.name}' in function '{function.__name__}' lacks a description in the docstring")
             elif not isinstance(param_doc.description, str):
                 raise ValueError(
@@ -390,16 +423,6 @@ def generate_schema(function, name: Optional[str] = None, description: Optional[
         # TODO is this not duplicating the other append directly above?
         if param.annotation == inspect.Parameter.empty:
             schema["parameters"]["required"].append(param.name)
-
-    # append the heartbeat
-    # TODO: don't hard-code
-    # TODO: if terminal, don't include this
-    if function.__name__ not in ["send_message"]:
-        schema["parameters"]["properties"]["continue_chaining"] = {
-            "type": "boolean",
-            "description": "Request an immediate heartbeat after function execution. Set to `True` if you want to send a follow-up message or run a follow-up function.",
-        }
-        schema["parameters"]["required"].append("continue_chaining")
 
     return schema
 

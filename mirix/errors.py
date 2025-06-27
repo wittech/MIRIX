@@ -62,6 +62,46 @@ class LLMError(MirixError):
     pass
 
 
+class LLMAuthenticationError(LLMError):
+    """Error raised when LLM authentication fails."""
+    pass
+
+
+class LLMBadRequestError(LLMError):
+    """Error raised when LLM request is malformed."""
+    pass
+
+
+class LLMConnectionError(LLMError):
+    """Error raised when LLM connection fails."""
+    pass
+
+
+class LLMNotFoundError(LLMError):
+    """Error raised when LLM resource is not found."""
+    pass
+
+
+class LLMPermissionDeniedError(LLMError):
+    """Error raised when LLM permission is denied."""
+    pass
+
+
+class LLMRateLimitError(LLMError):
+    """Error raised when LLM rate limit is exceeded."""
+    pass
+
+
+class LLMServerError(LLMError):
+    """Error raised when LLM server encounters an error."""
+    pass
+
+
+class LLMUnprocessableEntityError(LLMError):
+    """Error raised when LLM cannot process the entity."""
+    pass
+
+
 class BedrockPermissionError(MirixError):
     """Exception raised for errors in the Bedrock permission process."""
 

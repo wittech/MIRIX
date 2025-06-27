@@ -1,7 +1,8 @@
 from datetime import datetime
 from typing import Dict, Optional, Any, List
 
-from pydantic import Field
+from pydantic import Field, field_validator
+from mirix.constants import MAX_EMBEDDING_DIM
 
 from mirix.schemas.mirix_base import MirixBase
 from mirix.schemas.embedding_config import EmbeddingConfig
@@ -17,7 +18,7 @@ class KnowledgeVaultItemBase(MirixBase):
     source: str = Field(..., description="Information on who/where it was provided")
     sensitivity: str = Field(..., description="Data sensitivity level ('low', 'medium', 'high')")
     secret_value: str = Field(..., description="The actual credential or data value")
-    description: str = Field(..., description="Description of the knowledge vault item (e.g. 'API key for OpenAI Service')")
+    caption: str = Field(..., description="Description of the knowledge vault item (e.g. 'API key for OpenAI Service')")
 
 
 class KnowledgeVaultItem(KnowledgeVaultItemBase):
@@ -29,13 +30,30 @@ class KnowledgeVaultItem(KnowledgeVaultItemBase):
         created_at (datetime): Creation timestamp.
         updated_at (Optional[datetime]): Last update timestamp.
     """
-    id: str = KnowledgeVaultItemBase.generate_id_field()
+    id: Optional[str] = Field(None, description="Unique identifier for the knowledge vault item")
     created_at: datetime = Field(default_factory=get_utc_time, description="The creation date of the knowledge vault item")
     updated_at: Optional[datetime] = Field(None, description="The last update date of the knowledge vault item")
+    last_modify: Dict[str, Any] = Field(
+        default_factory=lambda: {"timestamp": get_utc_time().isoformat(), "operation": "created"},
+        description="Last modification info including timestamp and operation type"
+    )
     metadata_: Dict[str, Any] = Field(default_factory=dict, description="Arbitrary additional metadata")
     organization_id: str = Field(..., description="The unique identifier of the organization")
-    description_embedding: Optional[List[float]] = Field(None, description="The embedding of the summary")
+    caption_embedding: Optional[List[float]] = Field(None, description="The embedding of the summary")
     embedding_config: Optional[EmbeddingConfig] = Field(None, description="The embedding configuration used by the event")
+
+    # need to validate both details_embedding and summary_embedding to ensure they are the same size
+    @field_validator("caption_embedding")
+    @classmethod
+    def pad_embeddings(cls, embedding: List[float]) -> List[float]:
+        """Pad embeddings to `MAX_EMBEDDING_SIZE`. This is necessary to ensure all stored embeddings are the same size."""
+        import numpy as np
+
+        if embedding and len(embedding) != MAX_EMBEDDING_DIM:
+            np_embedding = np.array(embedding)
+            padded_embedding = np.pad(np_embedding, (0, MAX_EMBEDDING_DIM - np_embedding.shape[0]), mode="constant")
+            return padded_embedding.tolist()
+        return embedding
 
 class KnowledgeVaultItemCreate(KnowledgeVaultItemBase):
     """
@@ -60,7 +78,11 @@ class KnowledgeVaultItemUpdate(MirixBase):
     metadata_: Optional[Dict[str, Any]] = Field(None, description="Arbitrary additional metadata")
     organization_id: Optional[str] = Field(None, description="The unique identifier of the organization")
     updated_at: datetime = Field(default_factory=get_utc_time, description="The update date")
-    description_embedding: Optional[List[float]] = Field(None, description="The embedding of the summary")
+    last_modify: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Last modification info including timestamp and operation type"
+    )
+    caption_embedding: Optional[List[float]] = Field(None, description="The embedding of the summary")
     embedding_config: Optional[EmbeddingConfig] = Field(None, description="The embedding configuration used by the event")
 
 class KnowledgeVaultItemResponse(KnowledgeVaultItem):

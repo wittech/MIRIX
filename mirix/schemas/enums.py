@@ -1,6 +1,10 @@
 from enum import Enum
 
 
+class ProviderType(str, Enum):
+    anthropic = "anthropic"
+
+
 class MessageRole(str, Enum):
     assistant = "assistant"
     user = "user"
@@ -22,17 +26,31 @@ class JobStatus(str, Enum):
     Status of the job.
     """
 
+    not_started = "not_started"
     created = "created"
     running = "running"
     completed = "completed"
     failed = "failed"
     pending = "pending"
+    cancelled = "cancelled"
+    expired = "expired"
+
+
+class AgentStepStatus(str, Enum):
+    """
+    Status of the job.
+    """
+
+    paused = "paused"
+    resumed = "resumed"
+    completed = "completed"
 
 
 class MessageStreamStatus(str, Enum):
-    # done_generation = "[DONE_GEN]"
-    # done_step = "[DONE_STEP]"
     done = "[DONE]"
+
+    def model_dump_json(self):
+        return "[DONE]"
 
 
 class ToolRuleType(str, Enum):
@@ -42,9 +60,10 @@ class ToolRuleType(str, Enum):
 
     # note: some of these should be renamed when we do the data migration
 
-    run_first = "InitToolRule"
-    exit_loop = "TerminalToolRule"  # reasoning loop should exit
-    continue_loop = "continue_loop"  # reasoning loop should continue
+    run_first = "run_first"
+    exit_loop = "exit_loop"  # reasoning loop should exit
+    continue_loop = "continue_loop"
     conditional = "conditional"
-    constrain_child_tools = "ToolRule"
-    require_parent_tools = "require_parent_tools"
+    constrain_child_tools = "constrain_child_tools"
+    max_count_per_step = "max_count_per_step"
+    parent_last_tool = "parent_last_tool"

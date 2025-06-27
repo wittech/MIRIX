@@ -3,8 +3,8 @@ import warnings
 from typing import List, Optional
 
 from mirix.constants import (
-    CORE_MEMORY_TOOLS, BASE_TOOLS, BASE_CODER_TOOLS, 
-    EPISODIC_MEMORY_TOOLS,
+    CORE_MEMORY_TOOLS, BASE_TOOLS, 
+    EPISODIC_MEMORY_TOOLS, CHAT_AGENT_TOOLS,
     PROCEDURAL_MEMORY_TOOLS, RESOURCE_MEMORY_TOOLS,
     KNOWLEDGE_VAULT_TOOLS, META_MEMORY_TOOLS, SEMANTIC_MEMORY_TOOLS, UNIVERSAL_MEMORY_TOOLS, ALL_TOOLS
 )
@@ -158,15 +158,12 @@ class ToolManager:
                 if name in BASE_TOOLS:
                     tool_type = ToolType.MIRIX_CORE
                     tags = [tool_type.value]
-                elif name in CORE_MEMORY_TOOLS + EPISODIC_MEMORY_TOOLS + PROCEDURAL_MEMORY_TOOLS + RESOURCE_MEMORY_TOOLS + KNOWLEDGE_VAULT_TOOLS + META_MEMORY_TOOLS + SEMANTIC_MEMORY_TOOLS + UNIVERSAL_MEMORY_TOOLS:
+                elif name in CORE_MEMORY_TOOLS + EPISODIC_MEMORY_TOOLS + PROCEDURAL_MEMORY_TOOLS + RESOURCE_MEMORY_TOOLS + KNOWLEDGE_VAULT_TOOLS + META_MEMORY_TOOLS + SEMANTIC_MEMORY_TOOLS + UNIVERSAL_MEMORY_TOOLS + CHAT_AGENT_TOOLS:
                     tool_type = ToolType.MIRIX_MEMORY_CORE
-                    tags = [tool_type.value]
-                elif name in BASE_CODER_TOOLS:
-                    tool_type = ToolType.MIRIX_CODER_CORE
                     tags = [tool_type.value]
                 else:
                     raise ValueError(
-                        f"Tool name {name} is not in the list of tool names: {BASE_TOOLS + CORE_MEMORY_TOOLS + BASE_CODER_TOOLS + EPISODIC_MEMORY_TOOLS + PROCEDURAL_MEMORY_TOOLS + KNOWLEDGE_VAULT_TOOLS + RESOURCE_MEMORY_TOOLS + META_MEMORY_TOOLS + SEMANTIC_MEMORY_TOOLS}"
+                        f"Tool name {name} is not in the list of tool names: {BASE_TOOLS + CORE_MEMORY_TOOLS + EPISODIC_MEMORY_TOOLS + PROCEDURAL_MEMORY_TOOLS + KNOWLEDGE_VAULT_TOOLS + RESOURCE_MEMORY_TOOLS + META_MEMORY_TOOLS + SEMANTIC_MEMORY_TOOLS + UNIVERSAL_MEMORY_TOOLS + CHAT_AGENT_TOOLS}"
                     )
                 # create to tool
                 tools.append(
@@ -180,59 +177,4 @@ class ToolManager:
                         actor=actor,
                     )
                 )
-        return tools
-
-    @enforce_types
-    def upsert_coder_tools(self, actor: PydanticUser) -> List[PydanticTool]:
-        """Add default tools in coder.py"""
-        functions_to_schema = {}
-        module_names = ["coder"]
-        for module_name in module_names:
-            full_module_name = f"mirix.functions.function_sets.{module_name}"
-            try:
-                module = importlib.import_module(full_module_name)
-            except Exception as e:
-                # Handle other general exceptions
-                raise e
-
-            try:
-                # Load the function set
-                functions_to_schema.update(load_function_set(module))
-            except ValueError as e:
-                err = f"Error loading function set '{module_name}': {e}"
-                warnings.warn(err)
-
-        # create tool in db
-        tools = []
-        for name, schema in functions_to_schema.items():
-            if name in BASE_TOOLS + CORE_MEMORY_TOOLS + BASE_CODER_TOOLS:
-                if name in BASE_TOOLS:
-                    tool_type = ToolType.MIRIX_CORE
-                    tags = [tool_type.value]
-                elif name in CORE_MEMORY_TOOLS:
-                    tool_type = ToolType.MIRIX_MEMORY_CORE
-                    tags = [tool_type.value]
-                elif name in BASE_CODER_TOOLS:
-                    tool_type = ToolType.MIRIX_CODER_CORE
-                    tags = [tool_type.value]
-                else:
-                    raise ValueError(
-                        f"Tool name {name} is not in the list of base tool names: {BASE_TOOLS + CORE_MEMORY_TOOLS}"
-                    )
-
-                # create to tool
-                tools.append(
-                    self.create_or_update_tool(
-                        PydanticTool(
-                            name=name,
-                            tags=tags,
-                            source_type="python",
-                            tool_type=tool_type,
-                        ),
-                        actor=actor,
-                    )
-                )
-
-        # TODO: Delete any base tools that are stale
-
         return tools

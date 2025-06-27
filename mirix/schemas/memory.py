@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING, List, Optional
 
-from jinja2 import Template, TemplateSyntaxError
+from jinja2 import Template, TemplateSyntaxError, Environment
 from pydantic import BaseModel, Field
 
 # Forward referencing to avoid circular import with Agent -> Memory -> Agent
@@ -54,6 +54,21 @@ class ContextWindowOverview(BaseModel):
     # messages: List[dict] = Field(..., description="The messages in the context window.")
     messages: List[Message] = Field(..., description="The messages in the context window.")
 
+def line_numbers(value: str, prefix: str = "Line ") -> str:
+    """
+    Turn  
+        "a\nb"  
+    into  
+        "Line 1:\ta\nLine 2:\tb"
+    """
+    return "\n".join(
+        f"{prefix}{idx + 1}:\t{line}"
+        for idx, line in enumerate(value.splitlines())
+    )
+
+# Build an environment and add a custom filter
+env = Environment()
+env.filters["line_numbers"] = line_numbers
 
 class Memory(BaseModel, validate_assignment=True):
     """
@@ -69,7 +84,7 @@ class Memory(BaseModel, validate_assignment=True):
     prompt_template: str = Field(
         default="{% for block in blocks %}"
         '<{{ block.label }} characters="{{ block.value|length }}/{{ block.limit }}">\n'
-        "{{ block.value }}\n"
+        "{{ block.value|line_numbers }}\n"
         "</{{ block.label }}>"
         "{% if not loop.last %}\n{% endif %}"
         "{% endfor %}",
@@ -101,7 +116,7 @@ class Memory(BaseModel, validate_assignment=True):
 
     def compile(self) -> str:
         """Generate a string representation of the memory in-context using the Jinja2 template"""
-        template = Template(self.prompt_template)
+        template = env.from_string(self.prompt_template)
         return template.render(blocks=self.blocks)
 
     def list_block_labels(self) -> List[str]:
@@ -155,6 +170,7 @@ class BasicBlockMemory(Memory):
     Methods:
         core_memory_append: Append to the contents of core memory.
         core_memory_replace: Replace the contents of core memory.
+        core_memory_rewrite: Rewrite the contents of core memory.
     """
 
     def __init__(self, blocks: List[Block] = []):

@@ -90,7 +90,6 @@ def create(
     # agent_state: AgentState,
     llm_config: LLMConfig,
     messages: List[Message],
-    user_id: Optional[str] = None,  # option UUID to associate request with
     functions: Optional[list] = None,
     functions_python: Optional[dict] = None,
     function_call: Optional[str] = None,  # see: https://platform.openai.com/docs/api-reference/chat/create#chat-create-tool_choice
@@ -108,6 +107,7 @@ def create(
     model_settings: Optional[dict] = None,  # TODO: eventually pass from server
     image_uris: Optional[List[str]] = None, # TODO: inside messages
     extra_messages: Optional[List[Message]] = None,
+    get_input_data_for_debugging: bool = False,
 ) -> ChatCompletionResponse:
     """Return response to chat completion with backoff"""
     from mirix.utils import printd
@@ -147,32 +147,28 @@ def create(
             else:
                 function_call = "required"
 
-        data = build_openai_chat_completions_request(llm_config, messages, user_id, functions, function_call, use_tool_naming, max_tokens)
-        if stream:  # Client requested token streaming
-            data.stream = True
-            assert isinstance(stream_interface, AgentChunkStreamingInterface) or isinstance(
-                stream_interface, AgentRefreshStreamingInterface
-            ), type(stream_interface)
-            response = openai_chat_completions_process_stream(
-                url=llm_config.model_endpoint,  # https://api.openai.com/v1 -> https://api.openai.com/v1/chat/completions
-                api_key=model_settings.openai_api_key,
-                chat_completion_request=data,
-                stream_interface=stream_interface,
-            )
-        else:  # Client did not request token streaming (expect a blocking backend response)
-            data.stream = False
-            if isinstance(stream_interface, AgentChunkStreamingInterface):
-                stream_interface.stream_start()
-            try:
-                response = openai_chat_completions_request(
-                    url=llm_config.model_endpoint,  # https://api.openai.com/v1 -> https://api.openai.com/v1/chat/completions
-                    api_key=model_settings.openai_api_key,
-                    chat_completion_request=data,
-                    summarizing=summarizing,
-                )
-            finally:
-                if isinstance(stream_interface, AgentChunkStreamingInterface):
-                    stream_interface.stream_end()
+        data = build_openai_chat_completions_request(llm_config, messages, functions, function_call, use_tool_naming, max_tokens)
+        # if stream:  # Client requested token streaming
+        #     data.stream = True
+        #     assert isinstance(stream_interface, AgentChunkStreamingInterface) or isinstance(
+        #         stream_interface, AgentRefreshStreamingInterface
+        #     ), type(stream_interface)
+        #     response = openai_chat_completions_process_stream(
+        #         url=llm_config.model_endpoint,  # https://api.openai.com/v1 -> https://api.openai.com/v1/chat/completions
+        #         api_key=model_settings.openai_api_key,
+        #         chat_completion_request=data,
+        #         stream_interface=stream_interface,
+        #     )
+        # else:  # Client did not request token streaming (expect a blocking backend response)
+        response = openai_chat_completions_request(
+            url=llm_config.model_endpoint,  # https://api.openai.com/v1 -> https://api.openai.com/v1/chat/completions
+            api_key=model_settings.openai_api_key,
+            chat_completion_request=data,
+            get_input_data_for_debugging=get_input_data_for_debugging,
+        )
+
+        if get_input_data_for_debugging:
+            return response
 
         if llm_config.put_inner_thoughts_in_kwargs:
             response = unpack_all_inner_thoughts_from_kwargs(response=response, inner_thoughts_key=INNER_THOUGHTS_KWARG)
@@ -234,8 +230,6 @@ def create(
         # we should insert extra_messages here
         if extra_messages is not None:
 
-            # TODO: need to test whether we should put it at the end or before the last message, or chronologically
-            
             ## Choice 1: insert at the end:
             # messages.extend(extra_messages)
 
@@ -293,7 +287,8 @@ def create(
                 tools=tools,
             ),
             inner_thoughts_in_kwargs=llm_config.put_inner_thoughts_in_kwargs,
-            image_uris=image_uris
+            image_uris=image_uris,
+            get_input_data_for_debugging=get_input_data_for_debugging
         )
 
     elif llm_config.model_endpoint_type == "anthropic":

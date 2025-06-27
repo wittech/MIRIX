@@ -10,7 +10,7 @@ class SystemMessage(BaseModel):
 
 
 class UserMessage(BaseModel):
-    content: Union[str, List[str]]
+    content: Union[str, List[dict]]
     role: str = "user"
     name: Optional[str] = None
 
@@ -46,7 +46,7 @@ ChatMessage = Union[SystemMessage, UserMessage, AssistantMessage, ToolMessage]
 def cast_message_to_subtype(m_dict: dict) -> ChatMessage:
     """Cast a dictionary to one of the individual message types"""
     role = m_dict.get("role")
-    if role == "system":
+    if role == "system" or role == "developer":
         return SystemMessage(**m_dict)
     elif role == "user":
         return UserMessage(**m_dict)
@@ -55,7 +55,7 @@ def cast_message_to_subtype(m_dict: dict) -> ChatMessage:
     elif role == "tool":
         return ToolMessage(**m_dict)
     else:
-        raise ValueError("Unknown message role")
+        raise ValueError(f"Unknown message role: {role}")
 
 
 class ResponseFormat(BaseModel):
@@ -113,7 +113,6 @@ class ChatCompletionRequest(BaseModel):
     stream: Optional[bool] = False
     temperature: Optional[float] = 1 # TODO: might need to add logics to control this
     top_p: Optional[float] = 1
-    user: Optional[str] = None  # unique ID of the end-user (for monitoring)
 
     # function-calling related
     tools: Optional[List[Tool]] = None

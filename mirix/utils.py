@@ -8,6 +8,7 @@ import os
 import pickle
 import platform
 import random
+import string
 import re
 import subprocess
 import sys
@@ -23,8 +24,10 @@ import pytz
 import tiktoken
 from pathvalidate import sanitize_filename as pathvalidate_sanitize_filename
 from mirix.schemas.openai.chat_completion_request import Tool, ToolCall
+from logging import Logger
 
 import mirix
+from mirix.schemas.enums import MessageRole
 from mirix.constants import (
     CLI_WARNING_PREFIX,
     CORE_MEMORY_HUMAN_CHAR_LIMIT,
@@ -40,7 +43,6 @@ DEBUG = False
 if "LOG_LEVEL" in os.environ:
     if os.environ["LOG_LEVEL"] == "DEBUG":
         DEBUG = True
-
 
 ADJECTIVE_BANK = [
     "beautiful",
@@ -903,8 +905,16 @@ def parse_json(string) -> dict:
         return result
     except demjson.JSONDecodeError as e:
         print(f"Error parsing json with demjson package: {e}")
-        raise e
 
+    try:
+        from json_repair import repair_json
+        string = repair_json(string)
+        result = json_loads(string)
+        return result
+
+    except Exception as e:
+        print(f"Error repairing json with json_repair package: {e}")
+        raise e
 
 def validate_function_response(function_response_string: any, return_char_limit: int, strict: bool = False, truncate: bool = True) -> str:
     """Check to make sure that a function used by Mirix returned a valid response. Truncates to return_char_limit if necessary.
@@ -1177,8 +1187,6 @@ def clean_json_string_extra_backslash(s):
     return s
 
 
-
-
 def num_tokens_from_functions(functions: List[dict], model: str = "gpt-4"):
     """Return the number of tokens used by a list of functions.
 
@@ -1382,3 +1390,91 @@ def convert_timezone_to_utc(timestamp_str, timezone):
     utc_timestamp = localized_timestamp.astimezone(pytz.utc)
     
     return utc_timestamp
+
+def log_telemetry(logger: Logger, event: str, **kwargs):
+    """
+    Logs telemetry events with a timestamp.
+
+    :param logger: A logger
+    :param event: A string describing the event.
+    :param kwargs: Additional key-value pairs for logging metadata.
+    """
+    from mirix.settings import settings
+
+    if settings.verbose_telemetry_logging:
+        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S,%f UTC")  # More readable timestamp
+        extra_data = " | ".join(f"{key}={value}" for key, value in kwargs.items() if value is not None)
+        logger.info(f"[{timestamp}] EVENT: {event} | {extra_data}")
+
+
+def clean_json_string_extra_backslash(s):
+    """Clean extra backslashes out from stringified JSON
+
+    NOTE: Google AI Gemini API likes to include these
+    """
+    # Strip slashes that are used to escape single quotes and other backslashes
+    # Use json.loads to parse it correctly
+    while "\\\\" in s:
+        s = s.replace("\\\\", "\\")
+    return s
+
+
+def count_tokens(s: str, model: str = "gpt-4") -> int:
+    encoding = tiktoken.encoding_for_model(model)
+    return len(encoding.encode(s))
+
+def generate_short_id(prefix="id", length=4):
+    """
+    Generate a short, LLM-friendly ID.
+    
+    Args:
+        prefix: The prefix for the ID (e.g., "mem", "task", "user")
+        length: The length of the random part (default 4)
+        
+    Returns:
+        A short ID like "mem_A7K9", "task_B3X2", etc.
+        
+    Examples:
+        >>> generate_short_id("mem", 4)
+        "mem_A7K9"
+        >>> generate_short_id("task", 3)
+        "task_X2A"
+    """
+    chars = string.ascii_uppercase + string.digits
+    random_part = random.choice(string.ascii_uppercase) + ''.join(random.choices(chars, k=length-1))
+    return f"{prefix}_{random_part}" 
+
+def generate_unique_short_id(session_maker, model_class, prefix="id", length=4, max_attempts=10):
+    """
+    Generate a unique short, LLM-friendly ID with collision detection.
+    
+    Args:
+        session_maker: SQLAlchemy session maker for database access
+        model_class: The SQLAlchemy model class to check for ID uniqueness
+        prefix: The prefix for the ID (e.g., "sem", "res", "proc")
+        length: The length of the random part (default 4)
+        max_attempts: Maximum attempts to find a unique ID before fallback
+        
+    Returns:
+        A unique short ID like "sem_A7K9", "res_B3X2", etc.
+        
+    Examples:
+        >>> generate_unique_short_id(session_maker, SemanticMemoryItem, "sem", 4)
+        "sem_A7K9"
+        >>> generate_unique_short_id(session_maker, ResourceMemoryItem, "res", 4)
+        "res_B3X2"
+    """
+    from sqlalchemy import select
+    
+    for _ in range(max_attempts):
+        candidate_id = generate_short_id(prefix, length)
+        # Check if this ID already exists
+        with session_maker() as temp_session:
+            existing = temp_session.execute(
+                select(model_class).where(model_class.id == candidate_id)
+            ).first()
+            if not existing:
+                return candidate_id
+    
+    # If we can't find a unique ID after max_attempts, fall back to longer ID
+    return generate_short_id(prefix, length + 2) 

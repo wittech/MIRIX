@@ -1,16 +1,23 @@
 import logging
 import time
+import os
+import base64
+import hashlib
+import shutil
+from pathlib import Path
 from typing import Callable, Dict, Generator, List, Optional, Union
+from urllib.parse import urlparse
 
 import requests
 
 import mirix.utils
-from mirix.constants import ADMIN_PREFIX, CORE_MEMORY_TOOLS, BASE_CODER_TOOLS, BASE_TOOLS, DEFAULT_HUMAN, DEFAULT_PERSONA, FUNCTION_RETURN_CHAR_LIMIT
+from mirix.constants import ADMIN_PREFIX, META_MEMORY_TOOLS, CORE_MEMORY_TOOLS, BASE_TOOLS, DEFAULT_HUMAN, DEFAULT_PERSONA, FUNCTION_RETURN_CHAR_LIMIT
 from mirix.functions.functions import parse_source_code
 from mirix.orm.errors import NoResultFound
 from mirix.schemas.agent import AgentState, AgentType, CreateAgent, UpdateAgent
 from mirix.schemas.block import Block, BlockUpdate, CreateBlock, Human, Persona
 from mirix.schemas.embedding_config import EmbeddingConfig
+from mirix.schemas.mirix_message_content import TextContent, ImageContent, FileContent, CloudFileContent, MessageContentType
 
 # new schemas
 from mirix.schemas.enums import JobStatus, MessageRole
@@ -19,6 +26,8 @@ from mirix.schemas.environment_variables import (
     SandboxEnvironmentVariableCreate,
     SandboxEnvironmentVariableUpdate,
 )
+from mirix.schemas.file import FileMetadata
+from mirix.schemas.file import FileMetadata as PydanticFileMetadata
 from mirix.schemas.mirix_message import MirixMessage, MirixMessageUnion
 from mirix.schemas.mirix_request import MirixRequest, MirixStreamingRequest
 from mirix.schemas.mirix_response import MirixResponse, MirixStreamingResponse
@@ -52,7 +61,7 @@ class AbstractClient(object):
     def create_agent(
         self,
         name: Optional[str] = None,
-        agent_type: Optional[AgentType] = AgentType.memgpt_agent,
+        agent_type: Optional[AgentType] = AgentType.chat_agent,
         embedding_config: Optional[EmbeddingConfig] = None,
         llm_config: Optional[LLMConfig] = None,
         memory=None,
@@ -378,6 +387,10 @@ class LocalClient(AbstractClient):
         # create server
         self.interface = QueuingInterface(debug=debug)
         self.server = SyncServer(default_interface_factory=lambda: self.interface)
+        
+        # initialize file manager
+        from mirix.services.file_manager import FileManager
+        self.file_manager = FileManager()
 
         # save org_id that `LocalClient` is associated with
         if org_id:
@@ -393,6 +406,284 @@ class LocalClient(AbstractClient):
 
         self.user = self.server.user_manager.get_user_or_default(self.user_id)
         self.organization = self.server.get_organization_or_default(self.org_id)
+        
+        # get images directory from settings and ensure it exists
+        # Can be customized via MIRIX_IMAGES_DIR environment variable
+        from mirix.settings import settings
+        self.images_dir = Path(settings.images_dir)
+        self.images_dir.mkdir(parents=True, exist_ok=True)
+
+    def _generate_file_hash(self, content: bytes) -> str:
+        """Generate a unique hash for file content to avoid duplicates."""
+        return hashlib.sha256(content).hexdigest()[:16]
+
+    def _save_image_from_base64(self, base64_data: str, detail: str = "auto") -> FileMetadata:
+        """Save an image from base64 data and return FileMetadata."""
+        try:
+            # Parse the data URL format: data:image/jpeg;base64,{data}
+            if base64_data.startswith('data:'):
+                header, encoded = base64_data.split(',', 1)
+                # Extract MIME type from header
+                mime_type = header.split(':')[1].split(';')[0]
+                file_extension = mime_type.split('/')[-1]
+            else:
+                # Assume it's just base64 data without header
+                encoded = base64_data
+                mime_type = 'image/jpeg'
+                file_extension = 'jpg'
+            
+            # Decode base64 data
+            image_data = base64.b64decode(encoded)
+            
+            # Generate unique filename using hash
+            file_hash = self._generate_file_hash(image_data)
+            file_name = f"image_{file_hash}.{file_extension}"
+            file_path = self.images_dir / file_name
+            
+            # Check if file already exists
+            if not file_path.exists():
+                # Save the image data
+                with open(file_path, 'wb') as f:
+                    f.write(image_data)
+
+            # Create FileMetadata
+            file_metadata = self.file_manager.create_file_metadata_from_path(
+                file_path=str(file_path),
+                organization_id=self.org_id
+            )
+            
+            return file_metadata
+            
+        except Exception as e:
+            raise ValueError(f"Failed to save base64 image: {str(e)}")
+
+    def _save_image_from_url(self, url: str, detail: str = "auto") -> FileMetadata:
+        """Download and save an image from URL and return FileMetadata."""
+        try:
+            # Download the image
+            response = requests.get(url, stream=True, timeout=30)
+            response.raise_for_status()
+            
+            # Get content type and determine file extension
+            content_type = response.headers.get('content-type', 'image/jpeg')
+            file_extension = content_type.split('/')[-1]
+            if file_extension not in ['jpg', 'jpeg', 'png', 'gif', 'webp']:
+                file_extension = 'jpg'
+            
+            # Get the image content
+            image_data = response.content
+            
+            # Generate unique filename using hash
+            file_hash = self._generate_file_hash(image_data)
+            file_name = f"image_{file_hash}.{file_extension}"
+            file_path = self.images_dir / file_name
+            
+            # Check if file already exists
+            if not file_path.exists():
+                # Save the image data
+                with open(file_path, 'wb') as f:
+                    f.write(image_data)
+            
+            # Create FileMetadata
+            file_metadata = self.file_manager.create_file_metadata_from_path(
+                file_path=str(file_path),
+                organization_id=self.org_id
+            )
+            
+            return file_metadata
+            
+        except Exception as e:
+            raise ValueError(f"Failed to download and save image from URL {url}: {str(e)}")
+
+    def _save_image_from_file_uri(self, file_uri: str) -> FileMetadata:
+        """Copy an image from file URI and return FileMetadata."""
+        try:
+            # Parse file URI (could be file:// or just a local path)
+            if file_uri.startswith('file://'):
+                source_path = file_uri[7:]  # Remove 'file://' prefix
+            else:
+                source_path = file_uri
+            
+            source_path = Path(source_path)
+            
+            if not source_path.exists():
+                raise FileNotFoundError(f"Source file not found: {source_path}")
+            
+            # Read the file content
+            with open(source_path, 'rb') as f:
+                image_data = f.read()
+            
+            # Generate unique filename using hash
+            file_hash = self._generate_file_hash(image_data)
+            file_extension = source_path.suffix.lstrip('.') or 'jpg'
+            file_name = f"image_{file_hash}.{file_extension}"
+            file_path = self.images_dir / file_name
+            
+            # Check if file already exists
+            if not file_path.exists():
+                # Copy the file
+                shutil.copy2(source_path, file_path)
+            
+            # Create FileMetadata
+            file_metadata = self.file_manager.create_file_metadata_from_path(
+                file_path=str(file_path),
+                organization_id=self.org_id
+            )
+            
+            return file_metadata
+            
+        except Exception as e:
+            raise ValueError(f"Failed to copy image from file URI {file_uri}: {str(e)}")
+
+    def _save_image_from_google_cloud_uri(self, cloud_uri: str) -> FileMetadata:
+        """Create FileMetadata from Google Cloud URI without downloading the image.
+        
+        Google Cloud URIs are not directly downloadable and should be stored as remote references
+        in the source_url field, similar to how regular HTTP URLs are handled.
+        """
+        # Parse URI to get file name - Google Cloud URIs typically come in the format:
+        # https://generativelanguage.googleapis.com/v1beta/files/{file_id}
+        from urllib.parse import urlparse
+        parsed_uri = urlparse(cloud_uri)
+        
+        # Extract file ID from path if available, otherwise use generic name
+        file_id = os.path.basename(parsed_uri.path) or "google_cloud_file"
+        file_name = f"google_cloud_{file_id}"
+        
+        # Ensure file name has an extension
+        if not os.path.splitext(file_name)[1]:
+            file_name += ".jpg"  # Default to jpg for images without extension
+        
+        # Determine MIME type from extension or default to image/jpeg
+        file_extension = os.path.splitext(file_name)[1].lower()
+        file_type_map = {
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg', 
+            '.png': 'image/png',
+            '.gif': 'image/gif',
+            '.webp': 'image/webp',
+            '.bmp': 'image/bmp',
+            '.svg': 'image/svg+xml'
+        }
+        file_type = file_type_map.get(file_extension, 'image/jpeg')
+
+        # Create FileMetadata with Google Cloud URI in google_cloud_url field
+        file_metadata = self.file_manager.create_file_metadata(
+            PydanticFileMetadata(
+                organization_id=self.org_id,
+                file_name=file_name,
+                file_path=None,  # No local path for Google Cloud URIs
+                source_url=None,  # No regular source URL for Google Cloud files
+                google_cloud_url=cloud_uri,  # Store Google Cloud URI in the dedicated field
+                file_type=file_type,
+                file_size=None,  # Unknown size for remote Google Cloud files
+                file_creation_date=None,
+                file_last_modified_date=None,
+            )
+        )
+        
+        return file_metadata
+
+    def _save_file_from_path(self, file_path: str) -> FileMetadata:
+        """Save a file from local path and return FileMetadata."""
+        try:
+            file_path = Path(file_path)
+            
+            if not file_path.exists():
+                raise FileNotFoundError(f"File not found: {file_path}")
+            
+            # Create FileMetadata using the file manager
+            file_metadata = self.file_manager.create_file_metadata_from_path(
+                file_path=str(file_path),
+                organization_id=self.org_id
+            )
+            
+            return file_metadata
+            
+        except Exception as e:
+            raise ValueError(f"Failed to save file from path {file_path}: {str(e)}")
+
+    def _determine_file_type(self, file_path: str) -> str:
+        """Determine file type from file extension."""
+        file_extension = os.path.splitext(file_path)[1].lower()
+        file_type_map = {
+            # Images
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg', 
+            '.png': 'image/png',
+            '.gif': 'image/gif',
+            '.webp': 'image/webp',
+            '.bmp': 'image/bmp',
+            '.svg': 'image/svg+xml',
+            # Documents
+            '.pdf': 'application/pdf',
+            '.doc': 'application/msword',
+            '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            '.txt': 'text/plain',
+            '.rtf': 'application/rtf',
+            '.html': 'text/html',
+            '.htm': 'text/html',
+            # Spreadsheets
+            '.xls': 'application/vnd.ms-excel',
+            '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            '.csv': 'text/csv',
+            # Presentations
+            '.ppt': 'application/vnd.ms-powerpoint',
+            '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            # Other common formats
+            '.json': 'application/json',
+            '.xml': 'application/xml',
+            '.zip': 'application/zip',
+        }
+        return file_type_map.get(file_extension, 'application/octet-stream')
+
+    def _create_file_metadata_from_url(self, url: str, detail: str = "auto") -> FileMetadata:
+        """Create FileMetadata from URL without downloading the image.
+        
+        The URL is stored in the source_url field, not file_path, to clearly
+        distinguish between local files and remote resources.
+        """
+        try:
+            # Parse URL to get file name
+            from urllib.parse import urlparse
+            parsed_url = urlparse(url)
+            file_name = os.path.basename(parsed_url.path) or "remote_image"
+            
+            # Ensure file name has an extension
+            if not os.path.splitext(file_name)[1]:
+                file_name += ".jpg"  # Default to jpg for images without extension
+            
+            # Determine MIME type from extension or default to image/jpeg
+            file_extension = os.path.splitext(file_name)[1].lower()
+            file_type_map = {
+                '.jpg': 'image/jpeg',
+                '.jpeg': 'image/jpeg', 
+                '.png': 'image/png',
+                '.gif': 'image/gif',
+                '.webp': 'image/webp',
+                '.bmp': 'image/bmp',
+                '.svg': 'image/svg+xml'
+            }
+            file_type = file_type_map.get(file_extension, 'image/jpeg')
+            
+            # Create FileMetadata with URL in source_url field
+            file_metadata = self.file_manager.create_file_metadata(
+                PydanticFileMetadata(
+                    organization_id=self.org_id,
+                    file_name=file_name,
+                    file_path=None,  # No local path for remote URLs
+                    source_url=url,  # Store URL in the dedicated field
+                    file_type=file_type,
+                    file_size=None,  # Unknown size for remote URLs
+                    file_creation_date=None,
+                    file_last_modified_date=None,
+                )
+            )
+            
+            return file_metadata
+            
+        except Exception as e:
+            raise ValueError(f"Failed to create file metadata from URL {url}: {str(e)}")
 
     # agents
     def list_agents(
@@ -428,25 +719,19 @@ class LocalClient(AbstractClient):
         self,
         name: Optional[str] = None,
         # agent config
-        agent_type: Optional[AgentType] = AgentType.memgpt_agent,
+        agent_type: Optional[AgentType] = AgentType.chat_agent,
         # model configs
         embedding_config: EmbeddingConfig = None,
         llm_config: LLMConfig = None,
         # memory
         memory: Memory = None,
         block_ids: Optional[List[str]] = None,
-        # TODO: change to this when we are ready to migrate all the tests/examples (matches the REST API)
-        # memory_blocks=[
-        #    {"label": "human", "value": get_human_text(DEFAULT_HUMAN), "limit": 5000},
-        #    {"label": "persona", "value": get_persona_text(DEFAULT_PERSONA), "limit": 5000},
-        # ],
-        # system
         system: Optional[str] = None,
         # tools
         tool_ids: Optional[List[str]] = None,
         tool_rules: Optional[List[BaseToolRule]] = None,
         include_base_tools: Optional[bool] = True,
-        include_coder_tools: Optional[bool] = False,
+        include_meta_memory_tools: Optional[bool] = False,
         # metadata
         metadata: Optional[Dict] = {"human:": DEFAULT_HUMAN, "persona": DEFAULT_PERSONA},
         description: Optional[str] = None,
@@ -476,8 +761,8 @@ class LocalClient(AbstractClient):
         tool_names = []
         if include_base_tools:
             tool_names += BASE_TOOLS
-        if include_coder_tools:
-            tool_names += BASE_CODER_TOOLS
+        if include_meta_memory_tools:
+            tool_names += META_MEMORY_TOOLS
         tool_ids += [self.server.tool_manager.get_tool_by_name(tool_name=name, actor=self.server.user_manager.get_user_by_id(self.user.id)).id for name in tool_names]
 
         # check if default configs are provided
@@ -778,7 +1063,6 @@ class LocalClient(AbstractClient):
         self,
         agent_id: str,
         messages: List[Union[Message | MessageCreate]],
-        swebench_tools_and_envs: Optional[Dict] = None,
     ):
         """
         Send pre-packed messages to an agent.
@@ -792,25 +1076,27 @@ class LocalClient(AbstractClient):
         """
         self.interface.clear()
         usage = self.server.send_messages(actor=self.server.user_manager.get_user_by_id(self.user.id), agent_id=agent_id, 
-                                          messages=messages, swebench_tools_and_envs=swebench_tools_and_envs)
+                                          messages=messages)
 
         # format messages
         return MirixResponse(messages=messages, usage=usage)
 
     def send_message(
         self,
-        message: str,
+        message: str | list[dict],
         role: str,
         name: Optional[str] = None,
         agent_id: Optional[str] = None,
         agent_name: Optional[str] = None,
         stream_steps: bool = False,
         stream_tokens: bool = False,
-        image_uris: Optional[List[str]] = None,
-        swebench_tools_and_envs: Optional[Dict] = None,
         force_response: bool = False,
-        extra_message: str = None,
-        retrieved_memories: str = None,
+        existing_file_uris: Optional[List[str]] = None,
+        extra_messages: Optional[List[dict]] = None,
+        display_intermediate_message: any = None,
+        chaining: Optional[bool] = None,
+        message_queue: Optional[any] = None,
+        retrieved_memories: Optional[dict] = None,
     ) -> MirixResponse:
         """
         Send a message to an agent
@@ -822,6 +1108,7 @@ class LocalClient(AbstractClient):
             name(str): Name of the sender
             stream (bool): Stream the response (default: `False`)
             extra_message (str): Extra message to send. It will be inserted before the last message
+            chaining (bool): Whether to enable chaining for this message
 
         Returns:
             response (MirixResponse): Response from the agent
@@ -838,28 +1125,120 @@ class LocalClient(AbstractClient):
             raise NotImplementedError
         self.interface.clear()
 
+        if isinstance(message, str):
+            content = [TextContent(text=message)]
+            input_messages = [MessageCreate(role=MessageRole(role), content=content, name=name)]
+        elif isinstance(message, list):
+            def convert_message(m):
+                if m['type'] == 'text':
+                    return TextContent(**m)
+                elif m['type'] == 'image_url':
+                    url = m['image_url']['url']
+                    detail = m['image_url'].get("detail", "auto")
+                    
+                    # Handle the image based on URL type
+                    if url.startswith('data:'):
+                        # Base64 encoded image - save locally
+                        file_metadata = self._save_image_from_base64(url, detail)
+                    else:
+                        # HTTP URL - just create FileMetadata without downloading
+                        file_metadata = self._create_file_metadata_from_url(url, detail)
+                    
+                    return ImageContent(
+                        type=MessageContentType.image_url,
+                        image_id=file_metadata.id,
+                        detail=detail
+                    )
+                    
+                elif m['type'] == 'image_data':
+                    # Base64 image data (new format)
+                    data = m['image_data']['data']
+                    detail = m['image_data'].get("detail", "auto")
+                    
+                    # Save the base64 image to file_manager
+                    file_metadata = self._save_image_from_base64(data, detail)
+                    
+                    return ImageContent(
+                        type=MessageContentType.image_url,
+                        image_id=file_metadata.id,
+                        detail=detail
+                    )
+                elif m['type'] == 'file_uri':
+
+                    # File URI (local file path)  
+                    file_path = m['file_uri']
+                    
+                    # Check if it's an image or other file type
+                    file_type = self._determine_file_type(file_path)
+                    
+                    if file_type.startswith('image/'):
+                        # Handle as image
+                        file_metadata = self._save_image_from_file_uri(file_path)
+                        return ImageContent(
+                            type=MessageContentType.image_url,
+                            image_id=file_metadata.id,
+                            detail="auto"
+                        )
+                    else:
+                        # Handle as general file (e.g., PDF, DOC, etc.)
+                        file_metadata = self._save_file_from_path(file_path)
+                        return FileContent(
+                            type=MessageContentType.file_uri,
+                            file_id=file_metadata.id
+                        )
+                
+                elif m['type'] == 'google_cloud_file_uri':
+                    # Google Cloud file URI
+                    # Handle both the typo version and the correct version from the test file
+                    file_uri = m.get('google_cloud_file_uri') or m.get('file_uri')
+
+                    file_metadata = self._save_image_from_google_cloud_uri(file_uri)
+                    return CloudFileContent(
+                        type=MessageContentType.google_cloud_file_uri,
+                        cloud_file_uri=file_metadata.id,
+                    )
+
+                elif m['type'] == 'database_image_id':
+                    return ImageContent(
+                        type=MessageContentType.image_url,
+                        image_id=m['image_id'],
+                        detail="auto"
+                    )
+                
+                elif m['type'] == 'database_file_id':
+                    return FileContent(
+                        type=MessageContentType.file_uri,
+                        file_id=m['file_id'],
+                    )
+                
+                elif m['type'] == 'database_google_cloud_file_uri':
+                    return CloudFileContent(
+                        type=MessageContentType.google_cloud_file_uri,
+                        cloud_file_uri=m['cloud_file_uri'],
+                    )
+
+                else:
+                    raise ValueError(f"Unknown message type: {m['type']}")
+            
+            content = [convert_message(m) for m in message]
+            input_messages = [MessageCreate(role=MessageRole(role), content=content, name=name)]
+            if extra_messages is not None:
+                extra_messages = [MessageCreate(role=MessageRole(role), content=[convert_message(m) for m in extra_messages], name=name)]
+
+        else:
+            raise ValueError(f"Invalid message type: {type(message)}")
+
         usage = self.server.send_messages(
             actor=self.server.user_manager.get_user_by_id(self.user.id),
             agent_id=agent_id,
-            messages=[MessageCreate(role=MessageRole(role), text=message, name=name)],
-            image_uris=image_uris,
-            swebench_tools_and_envs=swebench_tools_and_envs,
+            input_messages=input_messages,
             force_response=force_response,
-            # extra_messages=[MessageCreate(role=MessageRole(role), text=extra_message, name=name)] if extra_message else None,
-            extra_messages=extra_message,
-            retrieved_memories=retrieved_memories,
+            display_intermediate_message=display_intermediate_message,
+            chaining=chaining,
+            existing_file_uris=existing_file_uris,
+            extra_messages=extra_messages,
+            message_queue=message_queue
         )
- 
-        ## TODO: need to make sure date/timestamp is propely passed
-        ## TODO: update self.interface.to_list() to return actual Message objects
-        ##       here, the message objects will have faulty created_by timestamps
-        # messages = self.interface.to_list()
-        # for m in messages:
-        #    assert isinstance(m, Message), f"Expected Message object, got {type(m)}"
-        # mirix_messages = []
-        # for m in messages:
-        #    mirix_messages += m.to_mirix_message()
-        # return MirixResponse(messages=mirix_messages, usage=usage)
 
         # format messages
         messages = self.interface.to_list()
@@ -972,12 +1351,13 @@ class LocalClient(AbstractClient):
             block_id=human_id, block_update=UpdateHuman(value=text, is_template=True), actor=self.server.user_manager.get_user_by_id(self.user.id)
         )
 
-    def update_persona(self, persona_id: str):
+    def update_persona(self, persona_id: str, text: str):
         """
         Update a persona block template
 
         Args:
             persona_id (str): ID of the persona block
+            text (str): Text of the persona block
 
         Returns:
             persona (Persona): Updated persona block
@@ -985,8 +1365,31 @@ class LocalClient(AbstractClient):
         blocks = self.server.block_manager.get_blocks(self.user)
         persona_block = [block for block in blocks if block.label == 'persona'][0]
         return self.server.block_manager.update_block(
-            block_id=persona_block.id, block_update=BlockUpdate(value=gpt_persona.get_persona_text(persona_id)), actor=self.server.user_manager.get_user_by_id(self.user.id)
+            block_id=persona_block.id, block_update=BlockUpdate(value=text), actor=self.server.user_manager.get_user_by_id(self.user.id)
         )
+
+    def update_persona_text(self, persona_name: str, text: str):
+        """
+        Update a persona block template by template name
+
+        Args:
+            persona_name (str): Name of the persona template
+            text (str): Text of the persona block
+
+        Returns:
+            persona (Persona): Updated persona block
+        """
+        persona_id = self.get_persona_id(persona_name)
+        if persona_id:
+            # Update existing persona
+            return self.server.block_manager.update_block(
+                block_id=persona_id, 
+                block_update=BlockUpdate(value=text, is_template=True), 
+                actor=self.server.user_manager.get_user_by_id(self.user.id)
+            )
+        else:
+            # Create new persona if it doesn't exist
+            return self.create_persona(persona_name, text)
 
     def get_persona(self, id: str) -> Persona:
         """
@@ -1450,6 +1853,86 @@ class LocalClient(AbstractClient):
         return self.server.sandbox_config_manager.list_sandbox_env_vars(
             sandbox_config_id=sandbox_config_id, actor=self.server.user_manager.get_user_by_id(self.user.id), limit=limit, cursor=cursor
         )
+
+    # file management methods
+    def save_file(self, file_path: str, source_id: Optional[str] = None) -> FileMetadata:
+        """
+        Save a file to the file manager and return its metadata.
+        
+        Args:
+            file_path (str): Path to the file to save
+            source_id (Optional[str]): Optional source ID to associate with the file
+            
+        Returns:
+            FileMetadata: The created file metadata
+        """
+        return self.file_manager.create_file_metadata_from_path(
+            file_path=file_path,
+            organization_id=self.org_id,
+            source_id=source_id
+        )
+
+    def list_files(self, cursor: Optional[str] = None, limit: Optional[int] = 50) -> List[FileMetadata]:
+        """
+        List files for the current organization.
+        
+        Args:
+            cursor (Optional[str]): Pagination cursor
+            limit (Optional[int]): Maximum number of files to return
+            
+        Returns:
+            List[FileMetadata]: List of file metadata
+        """
+        return self.file_manager.get_files_by_organization_id(
+            organization_id=self.org_id,
+            cursor=cursor,
+            limit=limit
+        )
+
+    def get_file(self, file_id: str) -> FileMetadata:
+        """
+        Get file metadata by ID.
+        
+        Args:
+            file_id (str): ID of the file
+            
+        Returns:
+            FileMetadata: The file metadata
+        """
+        return self.file_manager.get_file_metadata_by_id(file_id)
+
+    def delete_file(self, file_id: str) -> None:
+        """
+        Delete a file by ID.
+        
+        Args:
+            file_id (str): ID of the file to delete
+        """
+        self.file_manager.delete_file_metadata(file_id)
+
+    def search_files(self, name_pattern: str) -> List[FileMetadata]:
+        """
+        Search files by name pattern.
+        
+        Args:
+            name_pattern (str): Pattern to search for in file names
+            
+        Returns:
+            List[FileMetadata]: List of matching files
+        """
+        return self.file_manager.search_files_by_name(
+            file_name=name_pattern,
+            organization_id=self.org_id
+        )
+
+    def get_file_stats(self) -> dict:
+        """
+        Get file statistics for the current organization.
+        
+        Returns:
+            dict: File statistics including total files, size, and types
+        """
+        return self.file_manager.get_file_stats(organization_id=self.org_id)
 
     def update_agent_memory_block_label(self, agent_id: str, current_label: str, new_label: str) -> Memory:
         """Rename a block in the agent's core memory

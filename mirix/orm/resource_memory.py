@@ -1,4 +1,6 @@
 from typing import TYPE_CHECKING
+from datetime import datetime
+import datetime as dt
 
 from sqlalchemy import Column, JSON, String
 from sqlalchemy.orm import Mapped, mapped_column, declared_attr, relationship
@@ -26,7 +28,7 @@ class ResourceMemoryItem(SqlalchemyBase, OrganizationMixin):
     resource_type:   Category or type of the resource (e.g. 'doc', 'text', 'markdown', 'spreadsheet')
     """
 
-    __tablename__ = "resource_memory_items"
+    __tablename__ = "resource_memory"
     __pydantic_model__ = PydanticResourceMemoryItem
 
     # Primary key
@@ -38,26 +40,38 @@ class ResourceMemoryItem(SqlalchemyBase, OrganizationMixin):
 
     title: Mapped[str] = mapped_column(
         String,
-        nullable=False,
         doc="Short name or title of the resource"
     )
 
     summary: Mapped[str] = mapped_column(
         String,
-        nullable=True,
         doc="Brief description or summary of the resource"
     )
 
     resource_type: Mapped[str] = mapped_column(
         String,
-        nullable=True,
         doc="Type or format of the resource (e.g. 'doc', 'markdown', 'pdf_text')"
     )
 
     content: Mapped[str] = mapped_column(
         String,
-        nullable=True,
         doc="Full text or partial content of this resource"
+    )
+
+    # Hierarchical categorization path
+    tree_path: Mapped[list] = mapped_column(
+        JSON,
+        default=list,
+        nullable=False,
+        doc="Hierarchical categorization path as an array of strings"
+    )
+
+    # When was this item last modified and what operation?
+    last_modify: Mapped[dict] = mapped_column(
+        JSON,
+        nullable=False,
+        default=lambda: {"timestamp": datetime.now(dt.timezone.utc).isoformat(), "operation": "created"},
+        doc="Last modification info including timestamp and operation type"
     )
 
     metadata_: Mapped[dict] = mapped_column(
@@ -83,6 +97,6 @@ class ResourceMemoryItem(SqlalchemyBase, OrganizationMixin):
         """
         return relationship(
             "Organization",
-            back_populates="resource_memory_items",
+            back_populates="resource_memory",
             lazy="selectin"
         )

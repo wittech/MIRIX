@@ -10,146 +10,170 @@ from mirix.schemas.enums import ToolRuleType
 from mirix.schemas.llm_config import LLMConfig
 from mirix.schemas.openai.chat_completions import ToolCall, ToolCallFunction
 from mirix.schemas.tool_rule import ChildToolRule, ConditionalToolRule, InitToolRule, TerminalToolRule
+from mirix.helpers.converters import (
+    deserialize_agent_step_state,
+    deserialize_batch_request_result,
+    deserialize_create_batch_response,
+    deserialize_embedding_config,
+    deserialize_llm_config,
+    deserialize_message_content,
+    deserialize_poll_batch_response,
+    deserialize_tool_calls,
+    deserialize_tool_returns,
+    deserialize_tool_rules,
+    deserialize_vector,
+    serialize_agent_step_state,
+    serialize_batch_request_result,
+    serialize_create_batch_response,
+    serialize_embedding_config,
+    serialize_llm_config,
+    serialize_message_content,
+    serialize_poll_batch_response,
+    serialize_tool_calls,
+    serialize_tool_returns,
+    serialize_tool_rules,
+    serialize_vector,
+)
 
 
 class EmbeddingConfigColumn(TypeDecorator):
-    """Custom type for storing EmbeddingConfig as JSON."""
+    """Custom SQLAlchemy column type for storing EmbeddingConfig as JSON."""
 
     impl = JSON
     cache_ok = True
 
-    def load_dialect_impl(self, dialect):
-        return dialect.type_descriptor(JSON())
-
     def process_bind_param(self, value, dialect):
-        if value and isinstance(value, EmbeddingConfig):
-            return value.model_dump()
-        return value
+        return serialize_embedding_config(value)
 
     def process_result_value(self, value, dialect):
-        if value:
-            return EmbeddingConfig(**value)
-        return value
+        return deserialize_embedding_config(value)
 
 
 class LLMConfigColumn(TypeDecorator):
-    """Custom type for storing LLMConfig as JSON."""
+    """Custom SQLAlchemy column type for storing LLMConfig as JSON."""
 
     impl = JSON
     cache_ok = True
 
-    def load_dialect_impl(self, dialect):
-        return dialect.type_descriptor(JSON())
-
     def process_bind_param(self, value, dialect):
-        if value and isinstance(value, LLMConfig):
-            return value.model_dump()
-        return value
+        return serialize_llm_config(value)
 
     def process_result_value(self, value, dialect):
-        if value:
-            return LLMConfig(**value)
-        return value
+        return deserialize_llm_config(value)
 
 
 class ToolRulesColumn(TypeDecorator):
-    """Custom type for storing a list of ToolRules as JSON"""
+    """Custom SQLAlchemy column type for storing a list of ToolRules as JSON."""
 
     impl = JSON
     cache_ok = True
 
-    def load_dialect_impl(self, dialect):
-        return dialect.type_descriptor(JSON())
-
     def process_bind_param(self, value, dialect):
-        """Convert a list of ToolRules to JSON-serializable format."""
-        if value:
-            data = [rule.model_dump() for rule in value]
-            for d in data:
-                d["type"] = d["type"].value
+        return serialize_tool_rules(value)
 
-            for d in data:
-                assert not (d["type"] == "ToolRule" and "children" not in d), "ToolRule does not have children field"
-            return data
-        return value
-
-    def process_result_value(self, value, dialect) -> List[Union[ChildToolRule, InitToolRule, TerminalToolRule]]:
-        """Convert JSON back to a list of ToolRules."""
-        if value:
-            return [self.deserialize_tool_rule(rule_data) for rule_data in value]
-        return value
-
-    @staticmethod
-    def deserialize_tool_rule(data: dict) -> Union[ChildToolRule, InitToolRule, TerminalToolRule, ConditionalToolRule]:
-        """Deserialize a dictionary to the appropriate ToolRule subclass based on the 'type'."""
-        rule_type = ToolRuleType(data.get("type"))  # Remove 'type' field if it exists since it is a class var
-        if rule_type == ToolRuleType.run_first:
-            return InitToolRule(**data)
-        elif rule_type == ToolRuleType.exit_loop:
-            return TerminalToolRule(**data)
-        elif rule_type == ToolRuleType.constrain_child_tools:
-            rule = ChildToolRule(**data)
-            return rule
-        elif rule_type == ToolRuleType.conditional:
-            rule = ConditionalToolRule(**data)
-            return rule
-        else:
-            raise ValueError(f"Unknown tool rule type: {rule_type}")
+    def process_result_value(self, value, dialect):
+        return deserialize_tool_rules(value)
 
 
 class ToolCallColumn(TypeDecorator):
+    """Custom SQLAlchemy column type for storing OpenAI ToolCall objects as JSON."""
 
     impl = JSON
     cache_ok = True
 
-    def load_dialect_impl(self, dialect):
-        return dialect.type_descriptor(JSON())
-
     def process_bind_param(self, value, dialect):
-        if value:
-            values = []
-            for v in value:
-                if isinstance(v, ToolCall):
-                    values.append(v.model_dump())
-                else:
-                    values.append(v)
-            return values
-
-        return value
+        return serialize_tool_calls(value)
 
     def process_result_value(self, value, dialect):
-        if value:
-            tools = []
-            for tool_value in value:
-                if "function" in tool_value:
-                    tool_call_function = ToolCallFunction(**tool_value["function"])
-                    del tool_value["function"]
-                else:
-                    tool_call_function = None
-                tools.append(ToolCall(function=tool_call_function, **tool_value))
-            return tools
-        return value
+        return deserialize_tool_calls(value)
+
+
+class ToolReturnColumn(TypeDecorator):
+    """Custom SQLAlchemy column type for storing the return value of a tool call as JSON."""
+
+    impl = JSON
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        return serialize_tool_returns(value)
+
+    def process_result_value(self, value, dialect):
+        return deserialize_tool_returns(value)
+
+
+class MessageContentColumn(TypeDecorator):
+    """Custom SQLAlchemy column type for storing the content parts of a message as JSON."""
+
+    impl = JSON
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        return serialize_message_content(value)
+
+    def process_result_value(self, value, dialect):
+        return deserialize_message_content(value)
 
 
 class CommonVector(TypeDecorator):
-    """Common type for representing vectors in SQLite"""
+    """Custom SQLAlchemy column type for storing vectors in SQLite."""
 
     impl = BINARY
     cache_ok = True
 
-    def load_dialect_impl(self, dialect):
-        return dialect.type_descriptor(BINARY())
-
     def process_bind_param(self, value, dialect):
-        if value is None:
-            return value
-        if isinstance(value, list):
-            value = np.array(value, dtype=np.float32)
-        return base64.b64encode(value.tobytes())
+        return serialize_vector(value)
 
     def process_result_value(self, value, dialect):
-        if not value:
-            return value
-        if dialect.name == "sqlite":
-            value = base64.b64decode(value)
-        return np.frombuffer(value, dtype=np.float32)
+        return deserialize_vector(value, dialect)
+
+
+class CreateBatchResponseColumn(TypeDecorator):
+    """Custom SQLAlchemy column type for storing a list of ToolRules as JSON."""
+
+    impl = JSON
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        return serialize_create_batch_response(value)
+
+    def process_result_value(self, value, dialect):
+        return deserialize_create_batch_response(value)
+
+
+class PollBatchResponseColumn(TypeDecorator):
+    """Custom SQLAlchemy column type for storing a list of ToolRules as JSON."""
+
+    impl = JSON
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        return serialize_poll_batch_response(value)
+
+    def process_result_value(self, value, dialect):
+        return deserialize_poll_batch_response(value)
+
+
+class BatchRequestResultColumn(TypeDecorator):
+    """Custom SQLAlchemy column type for storing a list of ToolRules as JSON."""
+
+    impl = JSON
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        return serialize_batch_request_result(value)
+
+    def process_result_value(self, value, dialect):
+        return deserialize_batch_request_result(value)
+
+
+class AgentStepStateColumn(TypeDecorator):
+    """Custom SQLAlchemy column type for storing a list of ToolRules as JSON."""
+
+    impl = JSON
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        return serialize_agent_step_state(value)
+
+    def process_result_value(self, value, dialect):
+        return deserialize_agent_step_state(value)

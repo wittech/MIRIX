@@ -13,8 +13,8 @@ wait_for_postgres() {
 }
 
 # Check if we're configured for external Postgres
-if [ -n "$MIRA_PG_URI" ]; then
-    echo "External Postgres configuration detected, using $MIRA_PG_URI"
+if [ -n "$mirix_PG_URI" ]; then
+    echo "External Postgres configuration detected, using $mirix_PG_URI"
 else
     echo "No external Postgres configuration detected, starting internal PostgreSQL..."
     # Start PostgreSQL using the base image's entrypoint script
@@ -24,8 +24,8 @@ else
     wait_for_postgres
 
     # Set default connection URI for internal postgres
-    export MIRA_PG_URI="postgresql://${POSTGRES_USER:-mirix}:${POSTGRES_PASSWORD:-mirix}@localhost:5432/${POSTGRES_DB:-mirix}"
-    echo "Using internal PostgreSQL at: $MIRA_PG_URI"
+    export mirix_PG_URI="postgresql://${POSTGRES_USER:-mirix}:${POSTGRES_PASSWORD:-mirix}@localhost:5432/${POSTGRES_DB:-mirix}"
+    echo "Using internal PostgreSQL at: $mirix_PG_URI"
 fi
 
 # Attempt database migration

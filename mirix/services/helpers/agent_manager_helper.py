@@ -87,7 +87,7 @@ def _process_tags(agent: AgentModel, tags: List[str], replace=True):
 def derive_system_message(agent_type: AgentType, system: Optional[str] = None):
     if system is None:
         # TODO: don't hardcode
-        if agent_type == AgentType.memgpt_agent:
+        if agent_type == AgentType.chat_agent:
             system = gpt_system.get_system_text("memgpt_chat")
         elif agent_type == AgentType.offline_memory_agent:
             system = gpt_system.get_system_text("memgpt_offline_memory")

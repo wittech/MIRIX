@@ -5,10 +5,9 @@ import numpy as np
 from sqlalchemy import Select, func, literal, select, union_all
 
 from mirix.constants import (
-    CORE_MEMORY_TOOLS, BASE_TOOLS, 
-    MAX_EMBEDDING_DIM, 
+    CORE_MEMORY_TOOLS, BASE_TOOLS, MAX_EMBEDDING_DIM,
     EPISODIC_MEMORY_TOOLS, PROCEDURAL_MEMORY_TOOLS, SEMANTIC_MEMORY_TOOLS,
-    RESOURCE_MEMORY_TOOLS, KNOWLEDGE_VAULT_TOOLS, META_MEMORY_TOOLS, UNIVERSAL_MEMORY_TOOLS
+    RESOURCE_MEMORY_TOOLS, KNOWLEDGE_VAULT_TOOLS, META_MEMORY_TOOLS, UNIVERSAL_MEMORY_TOOLS, CHAT_AGENT_TOOLS
 )
 from mirix.embeddings import embedding_model
 from mirix.log import get_logger
@@ -89,6 +88,8 @@ class AgentManager:
             tool_names.extend(BASE_TOOLS)
         if agent_create.tools:
             tool_names.extend(agent_create.tools)
+        if agent_create.agent_type == AgentType.chat_agent:
+            tool_names.extend(CHAT_AGENT_TOOLS)
         if agent_create.agent_type == AgentType.episodic_memory_agent:
             tool_names.extend(EPISODIC_MEMORY_TOOLS + UNIVERSAL_MEMORY_TOOLS)
         if agent_create.agent_type == AgentType.procedural_memory_agent:
@@ -110,7 +111,10 @@ class AgentManager:
         tool_ids = agent_create.tool_ids or []
         for tool_name in tool_names:
             tool = self.tool_manager.get_tool_by_name(tool_name=tool_name, actor=actor)
-            tool_ids.append(tool.id)
+            if tool:
+                tool_ids.append(tool.id)
+            else:
+                print(f"Tool {tool_name} not found")
             
         # Remove duplicates
         tool_ids = list(set(tool_ids))
@@ -141,35 +145,104 @@ class AgentManager:
 
         return self.append_initial_message_sequence_to_in_context_messages(actor, agent_state, agent_create.initial_message_sequence)
 
+    def update_agent_tools_and_system_prompts(
+        self,
+        agent_id: str,
+        actor: PydanticUser,
+        system_prompt: Optional[str] = None,
+    ):
+        agent_state = self.get_agent_by_id(agent_id=agent_id, actor=actor)
+        
+        # update the system prompt
+        if system_prompt is not None:
+            if not agent_state.system == system_prompt:
+                self.update_system_prompt(agent_id=agent_id, system_prompt=system_prompt, actor=actor)
+        
+        # update the tools
+        ## get the new tool names
+        tool_names = []
+        if agent_state.agent_type == AgentType.episodic_memory_agent:
+            tool_names.extend(EPISODIC_MEMORY_TOOLS + UNIVERSAL_MEMORY_TOOLS)
+        if agent_state.agent_type == AgentType.procedural_memory_agent:
+            tool_names.extend(PROCEDURAL_MEMORY_TOOLS + UNIVERSAL_MEMORY_TOOLS)
+        if agent_state.agent_type == AgentType.resource_memory_agent:
+            tool_names.extend(RESOURCE_MEMORY_TOOLS + UNIVERSAL_MEMORY_TOOLS)
+        if agent_state.agent_type == AgentType.knowledge_vault_agent:
+            tool_names.extend(KNOWLEDGE_VAULT_TOOLS + UNIVERSAL_MEMORY_TOOLS)
+        if agent_state.agent_type == AgentType.core_memory_agent:
+            tool_names.extend(CORE_MEMORY_TOOLS + UNIVERSAL_MEMORY_TOOLS)
+        if agent_state.agent_type == AgentType.semantic_memory_agent:
+            tool_names.extend(SEMANTIC_MEMORY_TOOLS + UNIVERSAL_MEMORY_TOOLS)
+        if agent_state.agent_type == AgentType.meta_memory_agent:
+            tool_names.extend(META_MEMORY_TOOLS + UNIVERSAL_MEMORY_TOOLS)
+        if agent_state.agent_type == AgentType.chat_agent:
+            tool_names.extend(BASE_TOOLS + CHAT_AGENT_TOOLS)
+
+        ## extract the existing tool names for the agent
+        existing_tools = agent_state.tools
+        existing_tool_names = set([tool.name for tool in existing_tools])
+        existing_tool_ids = [tool.id for tool in existing_tools]
+        
+        new_tool_names = [tool_name for tool_name in tool_names if tool_name not in existing_tool_names]
+        tool_names_to_remove = [tool_name for tool_name in existing_tool_names if tool_name not in tool_names]
+
+        # Start with existing tool IDs
+        tool_ids = existing_tool_ids.copy()
+        
+        # Add new tools
+        if len(new_tool_names) > 0:
+            for tool_name in new_tool_names:
+                tool = self.tool_manager.get_tool_by_name(tool_name=tool_name, actor=actor)
+                if tool:
+                    tool_ids.append(tool.id)
+        
+        # Remove tools that should no longer be attached
+        if len(tool_names_to_remove) > 0:
+            tools_to_remove_ids = []
+            for tool_name in tool_names_to_remove:
+                tool = self.tool_manager.get_tool_by_name(tool_name=tool_name, actor=actor)
+                if tool:
+                    tools_to_remove_ids.append(tool.id)
+            
+            # Filter out the tools to be removed
+            tool_ids = [tool_id for tool_id in tool_ids if tool_id not in tools_to_remove_ids]
+        
+        # Update the agent if there are any changes
+        if len(new_tool_names) > 0 or len(tool_names_to_remove) > 0:
+            self.update_agent(agent_id=agent_id, agent_update=UpdateAgent(tool_ids=tool_ids), actor=actor)
+
     @enforce_types
-    def append_initial_message_sequence_to_in_context_messages(
-        self, actor: PydanticUser, agent_state: PydanticAgentState, initial_message_sequence: Optional[List[MessageCreate]] = None
-    ) -> PydanticAgentState:
+    def _generate_initial_message_sequence(
+        self, actor: PydanticUser, agent_state: PydanticAgentState, supplied_initial_message_sequence: Optional[List[MessageCreate]] = None
+    ) -> List[PydanticMessage]:
         init_messages = initialize_message_sequence(
             agent_state=agent_state, memory_edit_timestamp=get_utc_time(), include_initial_boot_message=True
         )
-
-        if initial_message_sequence is not None:
+        if supplied_initial_message_sequence is not None:
             # We always need the system prompt up front
             system_message_obj = PydanticMessage.dict_to_message(
                 agent_id=agent_state.id,
-                user_id=agent_state.created_by_id,
                 model=agent_state.llm_config.model,
                 openai_message_dict=init_messages[0],
             )
             # Don't use anything else in the pregen sequence, instead use the provided sequence
             init_messages = [system_message_obj]
             init_messages.extend(
-                package_initial_message_sequence(agent_state.id, initial_message_sequence, agent_state.llm_config.model, actor)
+                package_initial_message_sequence(agent_state.id, supplied_initial_message_sequence, agent_state.llm_config.model, actor)
             )
         else:
             init_messages = [
-                PydanticMessage.dict_to_message(
-                    agent_id=agent_state.id, user_id=agent_state.created_by_id, model=agent_state.llm_config.model, openai_message_dict=msg
-                )
+                PydanticMessage.dict_to_message(agent_id=agent_state.id, model=agent_state.llm_config.model, openai_message_dict=msg)
                 for msg in init_messages
             ]
 
+        return init_messages
+
+    @enforce_types
+    def append_initial_message_sequence_to_in_context_messages(
+        self, actor: PydanticUser, agent_state: PydanticAgentState, initial_message_sequence: Optional[List[MessageCreate]] = None
+    ) -> PydanticAgentState:
+        init_messages = self._generate_initial_message_sequence(actor, agent_state, initial_message_sequence)
         return self.append_to_in_context_messages(init_messages, agent_id=agent_state.id, actor=actor)
 
     @enforce_types
@@ -238,7 +311,10 @@ class AgentManager:
 
     @enforce_types
     def update_system_prompt(self, agent_id: str, system_prompt: str, actor: PydanticUser) -> PydanticAgentState:
-        return self.update_agent(agent_id=agent_id, agent_update=UpdateAgent(system=system_prompt), actor=actor)
+        agent_state = self.update_agent(agent_id=agent_id, agent_update=UpdateAgent(system=system_prompt), actor=actor)
+        # Rebuild the system prompt if it's different
+        agent_state = self.rebuild_system_prompt(agent_id=agent_state.id, system_prompt=system_prompt, actor=actor, force=True)
+        return agent_state
 
     @enforce_types
     def _update_agent(self, agent_id: str, agent_update: UpdateAgent, actor: PydanticUser) -> PydanticAgentState:
@@ -413,62 +489,20 @@ class AgentManager:
         return self.message_manager.get_message_by_id(message_id=message_ids[0], actor=actor)
 
     @enforce_types
-    def rebuild_system_prompt(self, agent_id: str, actor: PydanticUser, force=False, update_timestamp=True) -> PydanticAgentState:
-        """Rebuilds the system message with the latest memory object and any shared memory block updates
-
-        Updates to core memory blocks should trigger a "rebuild", which itself will create a new message object
-
-        Updates to the memory header should *not* trigger a rebuild, since that will simply flood recall storage with excess messages
-        """
-
+    def rebuild_system_prompt(self, agent_id: str, system_prompt: str, actor: PydanticUser, force=False) -> PydanticAgentState:
+        
+        """Rebuld the system prompt, put the system_prompt at the first position in the list of messages."""
+        
         agent_state = self.get_agent_by_id(agent_id=agent_id, actor=actor)
-
-        curr_system_message = self.get_system_message(
-            agent_id=agent_id, actor=actor
-        )  # this is the system + memory bank, not just the system prompt
-        curr_system_message_openai = curr_system_message.to_openai_dict()
-
-        # note: we only update the system prompt if the core memory is changed
-        # this means that the archival/recall memory statistics may be someout out of date
-        curr_memory_str = agent_state.memory.compile()
-        if curr_memory_str in curr_system_message_openai["content"] and not force:
-            # NOTE: could this cause issues if a block is removed? (substring match would still work)
-            logger.debug(
-                f"Memory hasn't changed for agent id={agent_id} and actor=({actor.id}, {actor.name}), skipping system prompt rebuild"
-            )
-            return agent_state
-
-        # If the memory didn't update, we probably don't want to update the timestamp inside
-        # For example, if we're doing a system prompt swap, this should probably be False
-        if update_timestamp:
-            memory_edit_timestamp = get_utc_time()
-        else:
-            # NOTE: a bit of a hack - we pull the timestamp from the message created_by
-            memory_edit_timestamp = curr_system_message.created_at
-
-        # update memory (TODO: potentially update recall/archival stats separately)
-        new_system_message_str = compile_system_message(
-            system_prompt=agent_state.system,
-            in_context_memory=agent_state.memory,
-            in_context_memory_last_edit=memory_edit_timestamp,
+        # Swap the system message out (only if there is a diff)
+        message = PydanticMessage.dict_to_message(
+            agent_id=agent_id,
+            model=agent_state.llm_config.model,
+            openai_message_dict={"role": "system", "content": system_prompt},
         )
-
-        diff = united_diff(curr_system_message_openai["content"], new_system_message_str)
-        if len(diff) > 0:  # there was a diff
-            logger.info(f"Rebuilding system with new memory...\nDiff:\n{diff}")
-
-            # Swap the system message out (only if there is a diff)
-            message = PydanticMessage.dict_to_message(
-                agent_id=agent_id,
-                user_id=actor.id,
-                model=agent_state.llm_config.model,
-                openai_message_dict={"role": "system", "content": new_system_message_str},
-            )
-            message = self.message_manager.create_message(message, actor=actor)
-            message_ids = [message.id] + agent_state.message_ids[1:]  # swap index 0 (system)
-            return self.set_in_context_messages(agent_id=agent_id, message_ids=message_ids, actor=actor)
-        else:
-            return agent_state
+        message = self.message_manager.create_message(message, actor=actor)
+        message_ids = [message.id] + agent_state.message_ids[1:]  # swap index 0 (system)
+        return self.set_in_context_messages(agent_id=agent_id, message_ids=message_ids, actor=actor)
 
     @enforce_types
     def update_topic(self, agent_id: str, topic: str, actor: PydanticUser) -> PydanticAgentState:

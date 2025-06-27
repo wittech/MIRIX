@@ -94,7 +94,6 @@ def openai_get_model_list(
 def build_openai_chat_completions_request(
     llm_config: LLMConfig,
     messages: List[_Message],
-    user_id: Optional[str],
     functions: Optional[list],
     function_call: Optional[str],
     use_tool_naming: bool,
@@ -129,7 +128,6 @@ def build_openai_chat_completions_request(
             messages=openai_message_list,
             tools=[Tool(type="function", function=f) for f in functions] if functions else None,
             tool_choice=tool_choice,
-            user=str(user_id),
             max_tokens=max_tokens,
         )
     else:
@@ -138,7 +136,6 @@ def build_openai_chat_completions_request(
             messages=openai_message_list,
             functions=functions,
             function_call=function_call,
-            user=str(user_id),
             max_tokens=max_tokens,
         )
         # https://platform.openai.com/docs/guides/text-generation/json-mode
@@ -517,7 +514,7 @@ def openai_chat_completions_request(
     url: str,
     api_key: str,
     chat_completion_request: ChatCompletionRequest,
-    summarizing=False
+    get_input_data_for_debugging=False
 ) -> ChatCompletionResponse:
     """Send a ChatCompletion request to an OpenAI-compatible server
 
@@ -554,149 +551,12 @@ def openai_chat_completions_request(
             except ValueError as e:
                 warnings.warn(f"Failed to convert tool function to structured output, tool={tool}, error={e}")
 
-    for message in data['messages']:
-
-        if 'content' in message and message['content'] is not None and "<image>" in message['content'] and "</image>" in message['content']:
-
-            content_with_image_uris = message['content']
-
-            # TODO: for 'read_image_with_uri', not sure if this is correct
-            if not isinstance(content_with_image_uris, str):
-                import ipdb; ipdb.set_trace()
-                content_with_image_uris = content_with_image_uris['message']
-
-            content_with_image_uris = json.loads(content_with_image_uris)
-
-            input_messages = []
-
-            for item in extract_content(content_with_image_uris['message']):
-
-                if item['type'] == 'text':
-                    input_messages.append(item)
-
-                elif item['type'] == 'image_url':
-                    image_path = item['image_url']
-                    import os
-                    if not os.path.exists(image_path):
-                        import ipdb; ipdb.set_trace()
-                    with open(image_path, "rb") as image_file:
-                        base64_image = base64.b64encode(image_file.read()).decode("utf-8")
-
-                    input_messages.append({
-                        'type': 'image_url', 
-                        'image_url': {
-                            'url': f"data:image/png;base64,{base64_image}"
-                        }
-                    })
-
-            message['content'] = input_messages
-
-            # TODO: need to replace the whole message with {'role': 'user', 'content': input_messages} when this is the output from "read_image_with_uri"
-
-    # last_message = data["messages"][-1]
-    # if not summarizing and "content" in last_message and last_message['content'] is not None and "<image>" in last_message['content'] and "</image>" in last_message['content']:
-    #     # retrieve the image_uris:
-    #     content = json.loads(last_message['content'])
-    #     image_uris = "<image>" + "<image>".join(content['message'].split("<image>")[1:])
-    #     image_uris = "</image>".join(image_uris.split("</image>")[:-1]) + "</image>"
-
-    #     image_uris = image_uris.split("\n")
-    #     image_uris = [x.replace("</image>", "").replace("<image>", "") for x in image_uris]
-
-    #     base64_images = []
-    #     for image_path in image_uris:
-    #         with open(image_path, "rb") as image_file:
-    #             base64_images.append(base64.b64encode(image_file.read()).decode("utf-8"))
-        
-    #     image_message = [
-    #         {'type': 'image_url', 'image_url':  {
-    #             'url': f"data:image/png;base64,{x}"
-    #         }}
-    #         for x in base64_images
-    #     ]
-    #     content['message'] = content['message'].split("<image>")[0]
-    #     for idx in range(len(image_message)):
-    #         content['message'] += f"\n<image>{idx+1}</image>"
-        
-    #     last_message['content'] = [
-    #         {'type': 'text', 'text': json.dumps(content)},
-    #         *image_message
-    #     ]
-
-    # # TODO: The following is for the function "read_image_with_uri" and it seems that we need to call "json.loads(message['content'])['message]" rather than json.loads(message['content'])
-
-    # if not summarizing and len(data["messages"]) > 3 and "tool_calls" in data['messages'][-3] and data['messages'][-3]['tool_calls'][0]['function']['name'] == "read_image_with_uri":
-        
-    #     image_uris = json.loads(data['messages'][-2]['content'])['message']
-    #     image_uris = image_uris.split("\n")
-    #     image_uris = [x.replace("</image>", "").replace("<image>", "") for x in image_uris]
-
-    #     base64_images = []
-    #     for image_path in image_uris:
-    #         with open(image_path, "rb") as image_file:
-    #             base64_images.append(base64.b64encode(image_file.read()).decode("utf-8"))
-        
-    #     image_message = [
-    #         {'type': 'image_url', 'image_url':  {
-    #             'url': f"data:image/png;base64,{x}"
-    #         }}
-    #         for x in base64_images
-    #     ]
-
-    #     new_message = {
-    #         'role': 'user',
-    #         'content': [
-    #             {'type': 'text', "text": 'These are the base64 representations of the images in the last tool call.'},
-    #             *image_message
-    #         ]
-    #     }
-
-    #     data['messages'] = data["messages"][:-1] + [new_message] + data["messages"][-1:]
+    if get_input_data_for_debugging:
+        return data
 
     response_json = make_post_request(url, headers, data)
 
-    import os
-    count = 0
-    while os.path.exists(f"responses/{count}.json"):
-        count += 1
-    with open(f"responses/{count}.json", "w") as f:
-        json.dump({
-            'input': data,
-            'output': response_json
-        }, f, indent=2)
-
-
-    # import os
-    # count = 0
-    # while os.path.exists(f"responses_new/{count}.json"):
-    #     count += 1
-
-    # if not os.path.exists(f"responses/{count}.json"):
-    #     response_json = make_post_request(url, headers, data)
-    #     with open(f"responses_new/{count}.json", "w") as f:
-    #         json.dump({
-    #             'input': data,
-    #             'output': response_json
-    #         }, f, indent=2)
-    #     with open(f"responses/{count}.json", "w") as f:
-    #         json.dump({
-    #             'input': data,
-    #             'output': response_json
-    #         }, f, indent=2)
-    # else:
-    #     with open(f"responses/{count}.json", "r") as f:
-    #         response_json = json.load(f)['output']
-    #     with open(f"responses_new/{count}.json", "w") as f:
-    #         json.dump({
-    #             'input': data,
-    #             'output': response_json
-    #         }, f, indent=2)
-
     return ChatCompletionResponse(**response_json)
-
-    
-
-    
 
 def openai_embeddings_request(url: str, api_key: str, data: dict) -> EmbeddingResponse:
     """https://platform.openai.com/docs/api-reference/embeddings/create"""

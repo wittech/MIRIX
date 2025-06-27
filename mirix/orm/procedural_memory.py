@@ -1,4 +1,6 @@
 from typing import TYPE_CHECKING
+from datetime import datetime
+import datetime as dt
 
 from sqlalchemy import Column, JSON, String
 from sqlalchemy.orm import Mapped, mapped_column, declared_attr, relationship
@@ -25,7 +27,7 @@ class ProceduralMemoryItem(SqlalchemyBase, OrganizationMixin):
     metadata_:   Additional fields/notes
     """
 
-    __tablename__ = "procedural_memory_items"
+    __tablename__ = "procedural_memory"
     __pydantic_model__ = PydanticProceduralMemoryItem
 
     # Primary key
@@ -38,22 +40,35 @@ class ProceduralMemoryItem(SqlalchemyBase, OrganizationMixin):
     # Distinguish the type/category of the procedure
     entry_type: Mapped[str] = mapped_column(
         String,
-        nullable=False,
         doc="Category or type (e.g. 'workflow', 'guide', 'script')"
     )
 
     # A human-friendly description of this procedure
-    description: Mapped[str] = mapped_column(
+    summary: Mapped[str] = mapped_column(
         String,
-        nullable=True,
         doc="Short description or title of the procedure"
     )
 
     # Steps or instructions stored as a JSON object/list
-    steps: Mapped[str] = mapped_column(
-        String,
-        nullable=True,
-        doc="Step-by-step instructions or method stored in JSON"
+    steps: Mapped[list] = mapped_column(
+        JSON,
+        doc="Step-by-step instructions stored as a list of strings"
+    )
+
+    # Hierarchical categorization path
+    tree_path: Mapped[list] = mapped_column(
+        JSON,
+        default=list,
+        nullable=False,
+        doc="Hierarchical categorization path as an array of strings"
+    )
+
+    # When was this item last modified and what operation?
+    last_modify: Mapped[dict] = mapped_column(
+        JSON,
+        nullable=False,
+        default=lambda: {"timestamp": datetime.now(dt.timezone.utc).isoformat(), "operation": "created"},
+        doc="Last modification info including timestamp and operation type"
     )
 
     # Optional metadata
@@ -69,10 +84,10 @@ class ProceduralMemoryItem(SqlalchemyBase, OrganizationMixin):
     # Vector embedding field based on database type
     if settings.mirix_pg_uri_no_default:
         from pgvector.sqlalchemy import Vector
-        description_embedding = mapped_column(Vector(MAX_EMBEDDING_DIM))
+        summary_embedding = mapped_column(Vector(MAX_EMBEDDING_DIM))
         steps_embedding = mapped_column(Vector(MAX_EMBEDDING_DIM))
     else:
-        description_embedding = Column(CommonVector)
+        summary_embedding = Column(CommonVector)
         steps_embedding = Column(CommonVector)
 
 
@@ -84,6 +99,6 @@ class ProceduralMemoryItem(SqlalchemyBase, OrganizationMixin):
         """
         return relationship(
             "Organization",
-            back_populates="procedural_memory_items",
+            back_populates="procedural_memory",
             lazy="selectin"
         )

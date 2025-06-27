@@ -36,12 +36,12 @@ class SummarizerSettings(BaseSettings):
     send_memory_warning_message: bool = False
 
     # The desired memory pressure to summarize down to
-    desired_memory_token_pressure: float = 0.3
+    desired_memory_token_pressure: float = 0.1
 
     # The number of messages at the end to keep
     # Even when summarizing, we may want to keep a handful of recent messages
     # These serve as in-context examples of how to use functions / what user messages look like
-    keep_last_n_messages: int = 0
+    keep_last_n_messages: int = 5
 
 
 class ModelSettings(BaseSettings):
@@ -121,6 +121,9 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="mirix_", extra="ignore")
 
     mirix_dir: Optional[Path] = Field(Path.home() / ".mirix", env="MIRIX_DIR")
+    # Directory where uploaded/processed images are stored
+    # Can be overridden with MIRIX_IMAGES_DIR environment variable
+    images_dir: Optional[Path] = Field(Path.home() / ".mirix" / "images", env="MIRIX_IMAGES_DIR")
     debug: Optional[bool] = False
     cors_origins: Optional[list] = cors_origins
 
@@ -131,11 +134,46 @@ class Settings(BaseSettings):
     pg_host: Optional[str] = None
     pg_port: Optional[int] = None
     pg_uri: Optional[str] = default_pg_uri  # option to specify full uri
-    pg_pool_size: int = 20  # Concurrent connections
-    pg_max_overflow: int = 10  # Overflow limit
+    pg_pool_size: int = 80  # Concurrent connections
+    pg_max_overflow: int = 30  # Overflow limit
     pg_pool_timeout: int = 30  # Seconds to wait for a connection
     pg_pool_recycle: int = 1800  # When to recycle connections
     pg_echo: bool = False  # Logging
+
+    # multi agent settings
+    multi_agent_send_message_max_retries: int = 3
+    multi_agent_send_message_timeout: int = 20 * 60
+    multi_agent_concurrent_sends: int = 50
+
+    # telemetry logging
+    verbose_telemetry_logging: bool = False
+    otel_exporter_otlp_endpoint: Optional[str] = None  # otel default: "http://localhost:4317"
+    disable_tracing: bool = False
+
+    # uvicorn settings
+    uvicorn_workers: int = 1
+    uvicorn_reload: bool = False
+    uvicorn_timeout_keep_alive: int = 5
+
+    # event loop parallelism
+    event_loop_threadpool_max_workers: int = 43
+
+    # experimental toggle
+    use_experimental: bool = False
+
+    # LLM provider client settings
+    httpx_max_retries: int = 5
+    httpx_timeout_connect: float = 10.0
+    httpx_timeout_read: float = 60.0
+    httpx_timeout_write: float = 30.0
+    httpx_timeout_pool: float = 10.0
+    httpx_max_connections: int = 500
+    httpx_max_keepalive_connections: int = 500
+    httpx_keepalive_expiry: float = 120.0
+
+    # cron job parameters
+    enable_batch_job_polling: bool = False
+    poll_running_llm_batches_interval_seconds: int = 5 * 60
 
     @property
     def mirix_pg_uri(self) -> str:
@@ -162,6 +200,7 @@ class TestSettings(Settings):
     model_config = SettingsConfigDict(env_prefix="mirix_test_", extra="ignore")
 
     mirix_dir: Optional[Path] = Field(Path.home() / ".mirix/test", env="MIRIX_TEST_DIR")
+    images_dir: Optional[Path] = Field(Path.home() / ".mirix/test" / "images", env="MIRIX_TEST_IMAGES_DIR")
 
 
 # singleton

@@ -250,7 +250,13 @@ def convert_google_ai_response_to_chatcompletion(
           "content": {
             "parts": [
               {
+                'thought': True, 'thoughtSignature': 'AVSoXO6Gl3O8QoOMyK1PI5LF9bTeN9v8iohxLr7UVHAlzQ4Ekhg3Exk6/tCeYHADfcVT6+nXThDXHWBii7bsbCvpyI30LdaG66i0DEYzP1vRJi1R7xGqFntgUCkahG5wVgr3t7D+umGzCERF83N+Xc1TVC1eocsfuc4dHuzccPNFp2MwsxtwPcdXUoyHbmtQ8j8S4mmme8j74b+KhhV0KV+YnWjr8VY0Sk7n1966LUo5TPaRgUfEzTikDUoGh3wZBXs0UzPgWYy2AxcZN7h/ZgLBOEdsuOkzs6RPrTpnAst/L38tmmf0HKracEWjtxPMDdPjTVnH5TuFyV58hsXUyNDZJ3lLGP7eSQQmPX/fqn6f6Bv+V6We/GdNvDaQRbdOzR0MmJE7YATEFT1BAJsi1BA/Gu8tCvLOIGu/Uty69bgNDyBDf8Sdqpp3yTSTDyHQawCIgk+P8dApEPkmi/G4dwnxZ175NmWpJpDU81ZUYq0rPA2Ijdg4vWOgce9YJhKQjjFTqYcWe+8X29hhSA9hwC9ewv4POPDZRbsFCU9I6tUuAMn4hxW2XB231AA87AJMvn6Av8MAcdf28tYAWbO/CQWakuhERKeZN2jeg6uhjTkmmT56JN4KqtF15u/sROI6/DLALUcX16jVC8O6o4hynGUdLzOoO7W8Kc/a2LwYJJeraDsynhyMqipwdIS2aXHu+gMFpXl2FkIZxLtVbPg177GAvosV+ZyWaV6FWorGGsnq+eR9E5r5syz6zXsbk93lzqqteLA0WWtew6dXDlDNaJ5gCbIVnKwLzxYZ7xxhk4Ko+5SSN8cKN0odbeC+RdQXkrs='
+              },
+              {
                 "text": " OK. Barbie is showing in two theaters in Mountain View, CA: AMC Mountain View 16 and Regal Edwards 14."
+              },
+              {
+                'functionCall': {'name': 'update_topic', 'args': {'topic': 'greeting', 'inner_thoughts': 'The user initiated the conversation with a greeting. I should respond with a greeting and set the topic to greeting.'}}
               }
             ]
           }
@@ -268,11 +274,6 @@ def convert_google_ai_response_to_chatcompletion(
         index = 0
         for candidate in response_json["candidates"]:
             content = candidate["content"]
-
-            # TODO: need to fix the bug that sometimes it cannot find "role"
-
-            if 'role' not in content:
-                import ipdb; ipdb.set_trace()
 
             role = content["role"]
             assert role == "model", f"Unknown role in response: {role}"
@@ -316,6 +317,9 @@ def convert_google_ai_response_to_chatcompletion(
                             )
                         ],
                     )
+
+                elif "thought" in response_message:
+                    continue
 
                 else:
 
@@ -423,6 +427,7 @@ def google_ai_chat_completions_request(
     # so there's no clean way to put inner thoughts in the same message as a function call
     inner_thoughts_in_kwargs: bool = True,
     image_uris: Optional[List[str]] = None,
+    get_input_data_for_debugging: bool = False,
 ) -> ChatCompletionResponse:
     """https://ai.google.dev/docs/function_calling
 
@@ -471,46 +476,24 @@ def google_ai_chat_completions_request(
                 if num_processed_images >= MAX_IMAGES_TO_PROCESS:
                     break
 
-    try:
-        if os.path.exists("responses"):
-            count = 0
-            while os.path.exists(f"responses/{count}.json"):
-                count += 1
-            with open(f"responses/{count}.json", "w") as f:
-                json.dump({
-                    'input': data,
-                }, f, indent=2)
-                
-            response_json = make_post_request(url, headers, data)
-            with open(f"responses/{count}.json", "w") as f:
-                json.dump({
-                    'input': data,
-                    'output': response_json
-                }, f, indent=2)
-            return convert_google_ai_response_to_chatcompletion(
-                response_json=response_json,
-                model=data.get("model"),
-                input_messages=data["contents"],
-                pull_inner_thoughts_from_args=inner_thoughts_in_kwargs,
-            )
-
-        else:
-            import time
-            s1 = time.time()
-            response_json = make_post_request(url, headers, data)
-            s2 = time.time()
-            print("Query Takes time:", s2 - s1)
-            return convert_google_ai_response_to_chatcompletion(
-                response_json=response_json,
-                model=data.get("model"),
-                input_messages=data["contents"],
-                pull_inner_thoughts_from_args=inner_thoughts_in_kwargs,
-            )
+    if get_input_data_for_debugging:
+        return data
     
-    except Exception as conversion_error:
-        print(f"Error during response conversion: {conversion_error}")
-        raise conversion_error
+    import time
+    s1 = time.time()
+    response_json = make_post_request(url, headers, data)
+    s2 = time.time()
+    print("Query Takes time:", s2 - s1)
 
+    if len(response_json['candidates'][0]['content']) == 0:
+        raise ValueError("Empty response from Google AI API")
+
+    return convert_google_ai_response_to_chatcompletion(
+        response_json=response_json,
+        model=data.get("model"),
+        input_messages=data["contents"],
+        pull_inner_thoughts_from_args=inner_thoughts_in_kwargs,
+    )
 
 def count_tokens(s: str, model: str = "gpt-4") -> int:
     encoding = tiktoken.encoding_for_model(model)

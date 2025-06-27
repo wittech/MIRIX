@@ -8,13 +8,15 @@ from mirix.schemas.organization import Organization as PydanticOrganization
 if TYPE_CHECKING:
 
     from mirix.orm.agent import Agent
+    from mirix.orm.block import Block
     from mirix.orm.file import FileMetadata
+    from mirix.orm.message import Message
     from mirix.orm.provider import Provider
-    from mirix.orm.sandbox_config import AgentEnvironmentVariable
+    from mirix.orm.sandbox_config import AgentEnvironmentVariable, SandboxConfig, SandboxEnvironmentVariable
     from mirix.orm.tool import Tool
     from mirix.orm.user import User
-    from mirix.orm.knowledgevault import KnowledgeVaultItem
-    from mirix.orm.episodic_event import EpisodicEvent
+    from mirix.orm.knowledge_vault import KnowledgeVaultItem
+    from mirix.orm.episodic_memory import EpisodicEvent
     from mirix.orm.procedural_memory import ProceduralMemoryItem
     from mirix.orm.resource_memory import ResourceMemoryItem
     from mirix.orm.semantic_memory import SemanticMemoryItem
@@ -48,32 +50,45 @@ class Organization(SqlalchemyBase):
     providers: Mapped[List["Provider"]] = relationship("Provider", back_populates="organization", cascade="all, delete-orphan")
 
     # Add knowledge vault relationship
-    knowledge_vault_items: Mapped[List["KnowledgeVaultItem"]] = relationship(
+    knowledge_vault: Mapped[List["KnowledgeVaultItem"]] = relationship(
         "KnowledgeVaultItem",
         back_populates="organization",
         cascade="all, delete-orphan",
     )
 
-    episodic_events: Mapped[List["EpisodicEvent"]] = relationship(
+    episodic_memory: Mapped[List["EpisodicEvent"]] = relationship(
         "EpisodicEvent",
         back_populates="organization",
         cascade="all, delete-orphan"
     )
 
-    procedural_memory_items: Mapped[List["ProceduralMemoryItem"]] = relationship(
+    procedural_memory: Mapped[List["ProceduralMemoryItem"]] = relationship(
         "ProceduralMemoryItem",
         back_populates="organization",
         cascade="all, delete-orphan",
     )
 
-    resource_memory_items: Mapped[List["ResourceMemoryItem"]] = relationship(
+    resource_memory: Mapped[List["ResourceMemoryItem"]] = relationship(
         "ResourceMemoryItem",
         back_populates="organization",
         cascade="all, delete-orphan",
     )
 
-    semantic_memory_items: Mapped[List["SemanticMemoryItem"]] = relationship(
+    semantic_memory: Mapped[List["SemanticMemoryItem"]] = relationship(
         "SemanticMemoryItem",
+        back_populates="organization",
+        cascade="all, delete-orphan",
+    )
+
+    # Add files relationship
+    files: Mapped[List["FileMetadata"]] = relationship(
+        "FileMetadata",
+        back_populates="organization",
+        cascade="all, delete-orphan",
+    )
+
+    cloud_file_mappings: Mapped[List["CloudFileMapping"]] = relationship(
+        "CloudFileMapping",
         back_populates="organization",
         cascade="all, delete-orphan",
     )

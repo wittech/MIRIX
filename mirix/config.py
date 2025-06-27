@@ -294,17 +294,7 @@ class MirixConfig:
         if not os.path.exists(MIRIX_DIR):
             os.makedirs(MIRIX_DIR, exist_ok=True)
 
-        folders = [
-            "personas",
-            "humans",
-            "archival",
-            "agents",
-            "functions",
-            "system_prompts",
-            "presets",
-            "settings",
-        ]
-
-        for folder in folders:
-            if not os.path.exists(os.path.join(MIRIX_DIR, folder)):
-                os.makedirs(os.path.join(MIRIX_DIR, folder))
+        # Only create the tmp folder if it doesn't exist (sqlite.db is created by the database)
+        tmp_folder = os.path.join(MIRIX_DIR, "tmp")
+        if not os.path.exists(tmp_folder):
+            os.makedirs(tmp_folder, exist_ok=True)

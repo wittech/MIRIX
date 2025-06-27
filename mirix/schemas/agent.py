@@ -15,6 +15,7 @@ from mirix.schemas.openai.chat_completion_response import UsageStatistics
 from mirix.schemas.tool import Tool
 from mirix.schemas.tool_rule import ToolRule
 from mirix.utils import create_random_username
+from mirix.helpers import ToolRulesSolver
 
 
 class AgentType(str, Enum):
@@ -23,7 +24,7 @@ class AgentType(str, Enum):
     """
 
     coder_agent = "coder_agent"
-    memgpt_agent = "memgpt_agent"
+    chat_agent = "chat_agent"
     episodic_memory_agent = 'episodic_memory_agent'
     procedural_memory_agent = 'procedural_memory_agent'
     resource_memory_agent = 'resource_memory_agent'
@@ -112,7 +113,7 @@ class CreateAgent(BaseModel, validate_assignment=True):  #
     tags: Optional[List[str]] = Field(None, description="The tags associated with the agent.")
     system: Optional[str] = Field(None, description="The system prompt used by the agent.")
     topic: Optional[str] = Field(None, description="The current topic between the agent and the user.")
-    agent_type: AgentType = Field(default_factory=lambda: AgentType.memgpt_agent, description="The type of agent.")
+    agent_type: AgentType = Field(default_factory=lambda: AgentType.chat_agent, description="The type of agent.")
     llm_config: Optional[LLMConfig] = Field(None, description="The LLM configuration used by the agent.")
     embedding_config: Optional[EmbeddingConfig] = Field(None, description="The embedding configuration used by the agent.")
     # Note: if this is None, then we'll populate with the standard "more human than human" initial message sequence
@@ -219,11 +220,38 @@ class UpdateAgent(BaseModel):
 
 class AgentStepResponse(BaseModel):
     messages: List[Message] = Field(..., description="The messages generated during the agent's step.")
-    heartbeat_request: bool = Field(..., description="Whether the agent requested a heartbeat (i.e. follow-up execution).")
+    continue_chaining: bool = Field(..., description="Whether the agent requested a heartbeat (i.e. follow-up execution).")
     function_failed: bool = Field(..., description="Whether the agent step ended because a function call failed.")
     in_context_memory_warning: bool = Field(
         ..., description="Whether the agent step ended because the in-context memory is near its limit."
     )
     usage: UsageStatistics = Field(..., description="Usage statistics of the LLM call during the agent's step.")
-    temporary_messages: Optional[List[Message]] = Field(..., description="The temporary messages generated during the agent's step.")
     traj: Optional[dict] = Field(None, description="Action, Observation, State at the current step")
+
+class AgentStepState(BaseModel):
+    step_number: int = Field(..., description="The current step number in the agent loop")
+    tool_rules_solver: ToolRulesSolver = Field(..., description="The current state of the ToolRulesSolver")
+
+
+def get_prompt_template_for_agent_type(agent_type: Optional[AgentType] = None):
+    if agent_type == AgentType.sleeptime_agent:
+        return (
+            "{% for block in blocks %}"
+            '<{{ block.label }} characters="{{ block.value|length }}/{{ block.limit }}">\n'
+            f"{CORE_MEMORY_LINE_NUMBER_WARNING}"
+            "{% for line in block.value.split('\\n') %}"
+            "Line {{ loop.index }}: {{ line }}\n"
+            "{% endfor %}"
+            "</{{ block.label }}>"
+            "{% if not loop.last %}\n{% endif %}"
+            "{% endfor %}"
+        )
+    return (
+        "{% for block in blocks %}"
+        '<{{ block.label }} characters="{{ block.value|length }}/{{ block.limit }}">\n'
+        "{{ block.value }}\n"
+        "</{{ block.label }}>"
+        "{% if not loop.last %}\n{% endif %}"
+        "{% endfor %}"
+    )
+

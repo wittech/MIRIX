@@ -38,13 +38,12 @@ class Block(OrganizationMixin, SqlalchemyBase):
     organization: Mapped[Optional["Organization"]] = relationship("Organization")
 
     def to_pydantic(self) -> Type:
-        match self.label:
-            case "human":
-                Schema = Human
-            case "persona":
-                Schema = Persona
-            case _:
-                Schema = PydanticBlock
+        if self.label == "human":
+            Schema = Human
+        elif self.label == "persona":
+            Schema = Persona
+        else:
+            Schema = PydanticBlock
         return Schema.model_validate(self)
 
 

@@ -1,6 +1,7 @@
 import json
 import uuid
 from typing import Optional
+import warnings
 
 from .constants import (
     INITIAL_BOOT_MESSAGE,
@@ -205,3 +206,26 @@ def get_token_limit_warning():
     }
 
     return json_dumps(packaged_message)
+
+
+def unpack_message(packed_message) -> str:
+    """Take a packed message string and attempt to extract the inner message content"""
+
+    try:
+        message_json = json.loads(packed_message)
+    except:
+        warnings.warn(f"Was unable to load message as JSON to unpack: '{packed_message}'")
+        return packed_message
+
+    if "message" not in message_json:
+        if "type" in message_json and message_json["type"] in ["login", "heartbeat"]:
+            # This is a valid user message that the ADE expects, so don't print warning
+            return packed_message
+        warnings.warn(f"Was unable to find 'message' field in packed message object: '{packed_message}'")
+        return packed_message
+    else:
+        message_type = message_json["type"]
+        if message_type != "user_message":
+            warnings.warn(f"Expected type to be 'user_message', but was '{message_type}', so not unpacking: '{packed_message}'")
+            return packed_message
+        return message_json.get("message")

@@ -216,3 +216,106 @@ class MessageManager:
             )
 
             return [msg.to_pydantic() for msg in results]
+
+    @enforce_types
+    def delete_detached_messages_for_agent(self, agent_id: str, actor: PydanticUser) -> int:
+        """
+        Delete messages that belong to an agent but are not in the agent's current message_ids list.
+        
+        This is useful for cleaning up messages that were removed from context during 
+        context window management but still exist in the database.
+        
+        Args:
+            agent_id: The ID of the agent to clean up messages for
+            actor: The user performing this action
+            
+        Returns:
+            int: Number of messages deleted
+        """
+        with self.session_maker() as session:
+            # First, get the agent to access its current message_ids
+            from mirix.orm.agent import Agent as AgentModel
+            try:
+                agent = AgentModel.read(db_session=session, identifier=agent_id, actor=actor)
+            except NoResultFound:
+                raise ValueError(f"Agent with id {agent_id} not found.")
+            
+            # Get current message_ids (messages that should be kept)
+            current_message_ids = set(agent.message_ids or [])
+            
+            # Find all messages for this agent
+            all_messages = MessageModel.list(
+                db_session=session, 
+                agent_id=agent_id,
+                organization_id=actor.organization_id,
+                limit=None  # Get all messages
+            )
+            
+            # Identify detached messages (not in current message_ids)
+            detached_messages = [
+                msg for msg in all_messages 
+                if msg.id not in current_message_ids
+            ]
+            
+            # Delete detached messages
+            deleted_count = 0
+            for msg in detached_messages:
+                msg.hard_delete(session, actor=actor)
+                deleted_count += 1
+            
+            session.commit()
+            return deleted_count
+
+    @enforce_types
+    def cleanup_all_detached_messages(self, actor: PydanticUser) -> Dict[str, int]:
+        """
+        Cleanup detached messages for all agents in the organization.
+        
+        Args:
+            actor: The user performing this action
+            
+        Returns:
+            Dict[str, int]: Dictionary mapping agent_id to number of messages deleted
+        """
+        from mirix.orm.agent import Agent as AgentModel
+        
+        with self.session_maker() as session:
+            # Get all agents for this organization
+            agents = AgentModel.list(
+                db_session=session,
+                organization_id=actor.organization_id,
+                limit=None
+            )
+            
+            cleanup_results = {}
+            total_deleted = 0
+            
+            for agent in agents:
+                # Get current message_ids for this agent
+                current_message_ids = set(agent.message_ids or [])
+                
+                # Find all messages for this agent
+                all_messages = MessageModel.list(
+                    db_session=session,
+                    agent_id=agent.id,
+                    organization_id=actor.organization_id,
+                    limit=None
+                )
+                
+                # Identify and delete detached messages
+                detached_messages = [
+                    msg for msg in all_messages 
+                    if msg.id not in current_message_ids
+                ]
+                
+                deleted_count = 0
+                for msg in detached_messages:
+                    msg.hard_delete(session, actor=actor)
+                    deleted_count += 1
+                
+                cleanup_results[agent.id] = deleted_count
+                total_deleted += deleted_count
+            
+            session.commit()
+            cleanup_results['total'] = total_deleted
+            return cleanup_results

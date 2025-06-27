@@ -7,7 +7,10 @@ from sqlalchemy.orm import Mapped, mapped_column, declared_attr, relationship
 
 from mirix.schemas.cloud_file_mapping import CloudFileMapping as PydanticCloudFileMapping
 
-class CloudFileMapping(SqlalchemyBase):
+if TYPE_CHECKING:
+    from mirix.orm.organization import Organization
+
+class CloudFileMapping(SqlalchemyBase, OrganizationMixin):
     """
     Represents a mapping between a cloud file and its metadata.
     """
@@ -32,3 +35,16 @@ class CloudFileMapping(SqlalchemyBase):
         String,
         doc="ID of the local file"
     )
+    
+    status: Mapped[str] = mapped_column(
+        String,
+        doc="whether it has been processed by our model"
+    )
+
+    timestamp: Mapped[str] = mapped_column(
+        String,
+        doc="timestamp of the screenshot"
+    )
+
+    # relationships
+    organization: Mapped["Organization"] = relationship("Organization", back_populates="cloud_file_mappings", lazy="selectin")

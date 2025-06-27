@@ -6,7 +6,6 @@ from mirix.constants import (
     COMPOSIO_TOOL_TAG_NAME,
     FUNCTION_RETURN_CHAR_LIMIT,
     MIRIX_CORE_TOOL_MODULE_NAME,
-    MIRIX_CODER_CORE_TOOL_MODULE_NAME,
     MIRIX_MEMORY_TOOL_MODULE_NAME,
 )
 from mirix.functions.functions import derive_openai_json_schema, get_json_schema_from_module
@@ -71,8 +70,6 @@ class Tool(BaseTool):
         elif self.tool_type in {ToolType.MIRIX_CORE}:
             # If it's mirix core tool, we generate the json_schema on the fly here
             self.json_schema = get_json_schema_from_module(module_name=MIRIX_CORE_TOOL_MODULE_NAME, function_name=self.name)
-        elif self.tool_type in {ToolType.MIRIX_CODER_CORE}:
-            self.json_schema = get_json_schema_from_module(module_name=MIRIX_CODER_CORE_TOOL_MODULE_NAME, function_name=self.name)
         elif self.tool_type in {ToolType.MIRIX_MULTI_AGENT_CORE}:
             # If it's mirix multi-agent tool, we also generate the json_schema on the fly here
             self.json_schema = get_json_schema_from_module(module_name=MIRIX_MULTI_AGENT_TOOL_MODULE_NAME, function_name=self.name)
