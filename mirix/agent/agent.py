@@ -1389,37 +1389,37 @@ These keywords have been used to retrieve relevant memories from the database.
                 )
                 all_response_messages.extend(tmp_response_messages)
 
-            if function_failed:
+            # if function_failed:
 
-                inputs = self._get_ai_reply(
-                    message_sequence=input_message_sequence,
-                    first_message=first_message,
-                    stream=stream,
-                    step_count=step_count,
-                    # extra_messages=extra_messages,
-                    get_input_data_for_debugging=True
-                )
+            #     inputs = self._get_ai_reply(
+            #         message_sequence=input_message_sequence,
+            #         first_message=first_message,
+            #         stream=stream,
+            #         step_count=step_count,
+            #         # extra_messages=extra_messages,
+            #         get_input_data_for_debugging=True
+            #     )
 
-                try:
-                    error = json.loads(all_response_messages[-1].content[0].text)
-                except:
-                    error = 'Not Known'
+            #     try:
+            #         error = json.loads(all_response_messages[-1].content[0].text)
+            #     except:
+            #         error = 'Not Known'
 
-                response_json = response.model_dump()
-                response_json.pop('created', None)
-                results_to_log = {
-                    'input': inputs,
-                    'output': response_json,
-                    'error': error
-                }
+            #     response_json = response.model_dump()
+            #     response_json.pop('created', None)
+            #     results_to_log = {
+            #         'input': inputs,
+            #         'output': response_json,
+            #         'error': error
+            #     }
 
-                if not os.path.exists("debug"):
-                    os.makedirs("debug")
-                count = 0
-                while os.path.exists(f"debug/debug_{count}.json"):
-                    count += 1
-                with open(f"debug/debug_{count}.json", "w") as f:
-                    json.dump(results_to_log, f, indent=2)
+            #     if not os.path.exists("debug"):
+            #         os.makedirs("debug")
+            #     count = 0
+            #     while os.path.exists(f"debug/debug_{count}.json"):
+            #         count += 1
+            #     with open(f"debug/debug_{count}.json", "w") as f:
+            #         json.dump(results_to_log, f, indent=2)
                 
             # Step 6: extend the message history
             if len(messages) > 0:

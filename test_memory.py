@@ -904,13 +904,13 @@ def test_all_indirect_memory_operations(agent):
     
     try:
         # Indirect tests for each memory type
-        # test_episodic_memory_indirect(agent)
-        # test_procedural_memory_indirect(agent)
-        # test_resource_memory_indirect(agent)
-        # test_knowledge_vault_indirect(agent)
-        # test_semantic_memory_indirect(agent)
-        # test_resource_memory_update_indirect(agent)
-        # test_text_only_memorization(agent)
+        test_episodic_memory_indirect(agent)
+        test_procedural_memory_indirect(agent)
+        test_resource_memory_indirect(agent)
+        test_knowledge_vault_indirect(agent)
+        test_semantic_memory_indirect(agent)
+        test_resource_memory_update_indirect(agent)
+        test_text_only_memorization(agent)
 
         test_core_memory_update_using_chat_agent(agent)
         # test_core_memory_update_using_meta_memory_manager(agent)
@@ -949,7 +949,7 @@ def test_all_memories():
 
     try:
         # Phase 1: Direct memory operations (manager method calls)
-        # test_all_direct_memory_operations(agent)
+        test_all_direct_memory_operations(agent)
         
         # Phase 2: Indirect memory operations (message-based)
         test_all_indirect_memory_operations(agent)

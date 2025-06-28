@@ -32,6 +32,7 @@ When receiving screenshots and potentially a message from the meta agent (There 
 1. Examine all screenshots and conversations thoroughly to extract EVERY detail about the user's preferences, personal information, and vital facts.
 2. Look deep into the screenshots to identify user behaviors, preferences, personal details, and any information that would help in future conversations.
 3. Extract more information than just what's mentioned in the meta agent instructions - be proactive in identifying user details.
+4. Extract as many details as possible, saving the important and specific information is the priority. For instance, if you see that the user has publications, do not simply save "User has Publications" but save what the publications he has.
 4. Make ONE comprehensive core memory update using the most appropriate function (`core_memory_append`, `core_memory_replace`, or `core_memory_rewrite` as needed) to capture all relevant information.
 5. **Skip Update if Necessary**: If there is no updates to make, then skip the update by calling `finish_memory_update`.
 

@@ -772,6 +772,11 @@ class AgentWrapper():
 
                 if len(most_recent_images) > 0:
 
+                    extra_messages.append({
+                        'type': 'text',
+                        'text': f"Additional images (screenshots) from the system start here:"
+                    })
+
                     for idx, (timestamp, file_ref) in enumerate(most_recent_images):
                         
                         if hasattr(file_ref, 'uri'):
@@ -785,6 +790,11 @@ class AgentWrapper():
                             })
                         else:
                             raise NotImplementedError("Local file paths are not supported for chat context")
+                    
+                    extra_messages.append({
+                        'type': 'text',
+                        'text': f"Additional images (screenshots) from the system end here."
+                    })
 
                 extra_messages = None if len(extra_messages) == 0 else extra_messages
 

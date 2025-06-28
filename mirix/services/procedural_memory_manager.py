@@ -520,7 +520,12 @@ class ProceduralMemoryManager:
                     if search_field == 'steps':
                         # For JSON array field, convert to text first and then search
                         from sqlalchemy import text
-                        search_condition = text("lower(regexp_replace(steps::text, '[\"\\[\\],]', ' ', 'g')) LIKE lower(:query)")
+                        if settings.mirix_pg_uri_no_default:
+                            # PostgreSQL: use regexp_replace and ::text casting
+                            search_condition = text("lower(regexp_replace(steps::text, '[\"\\[\\],]', ' ', 'g')) LIKE lower(:query)")
+                        else:
+                            # SQLite: use simpler text conversion without regexp_replace or ::text
+                            search_condition = text("lower(steps) LIKE lower(:query)")
                         main_query = base_query.where(search_condition).params(query=f'%{query}%')
                     else:
                         search_field_obj = eval("ProceduralMemoryItem." + search_field)
