@@ -28,6 +28,7 @@ from mirix.embeddings import embedding_model, parse_and_chunk_text
 from mirix.schemas.embedding_config import EmbeddingConfig
 from mirix.services.utils import build_query, update_timezone
 from mirix.settings import settings
+from mirix.constants import BUILD_EMBEDDINGS_FOR_MEMORY
 
 class SemanticMemoryManager:
     """Manager class to handle business logic related to Semantic Memory Items."""
@@ -651,11 +652,19 @@ class SemanticMemoryManager:
         """
         try:
 
-            # TODO: need to check if we need to chunk the text
-            embed_model = embedding_model(agent_state.embedding_config)
-            name_embedding = embed_model.get_text_embedding(name)
-            summary_embedding = embed_model.get_text_embedding(summary)
-            details_embedding = embed_model.get_text_embedding(details)
+            # Conditionally calculate embeddings based on BUILD_EMBEDDINGS_FOR_MEMORY flag
+            if BUILD_EMBEDDINGS_FOR_MEMORY:
+                # TODO: need to check if we need to chunk the text
+                embed_model = embedding_model(agent_state.embedding_config)
+                name_embedding = embed_model.get_text_embedding(name)
+                summary_embedding = embed_model.get_text_embedding(summary)
+                details_embedding = embed_model.get_text_embedding(details)
+                embedding_config = agent_state.embedding_config
+            else:
+                name_embedding = None
+                summary_embedding = None
+                details_embedding = None
+                embedding_config = None
 
             semantic_item = self.create_item(
                 item_data=PydanticSemanticMemoryItem(
@@ -667,7 +676,7 @@ class SemanticMemoryManager:
                     details_embedding=details_embedding,
                     name_embedding=name_embedding,
                     summary_embedding=summary_embedding,
-                    embedding_config=agent_state.embedding_config,
+                    embedding_config=embedding_config,
                     tree_path=tree_path,
                 )
             )

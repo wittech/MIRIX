@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 from datetime import datetime
 import datetime as dt
 
@@ -88,16 +88,20 @@ class EpisodicEvent(SqlalchemyBase, OrganizationMixin):
         doc="Additional metadata for flexible storage"
     )
 
-    embedding_config: Mapped[dict] = mapped_column(EmbeddingConfigColumn, doc="Embedding configuration")
+    embedding_config: Mapped[Optional[dict]] = mapped_column(
+        EmbeddingConfigColumn, 
+        nullable=True,
+        doc="Embedding configuration"
+    )
     
     # Vector embedding field based on database type
     if settings.mirix_pg_uri_no_default:
         from pgvector.sqlalchemy import Vector
-        details_embedding = mapped_column(Vector(MAX_EMBEDDING_DIM))
-        summary_embedding = mapped_column(Vector(MAX_EMBEDDING_DIM))
+        details_embedding = mapped_column(Vector(MAX_EMBEDDING_DIM), nullable=True)
+        summary_embedding = mapped_column(Vector(MAX_EMBEDDING_DIM), nullable=True)
     else:
-        details_embedding = Column(CommonVector)
-        summary_embedding = Column(CommonVector)
+        details_embedding = Column(CommonVector, nullable=True)
+        summary_embedding = Column(CommonVector, nullable=True)
 
     # Full-text search indexes - handled by migration script
     # PostgreSQL: GIN indexes on tsvector expressions

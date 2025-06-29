@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 from sqlalchemy import Column, JSON, String, DateTime
 from sqlalchemy.orm import Mapped, mapped_column, declared_attr, relationship
 from mirix.orm.sqlalchemy_base import SqlalchemyBase
@@ -96,18 +96,22 @@ class SemanticMemoryItem(SqlalchemyBase, OrganizationMixin):
         doc="Timestamp when this semantic memory entry was created"
     )
 
-    embedding_config: Mapped[dict] = mapped_column(EmbeddingConfigColumn, doc="Embedding configuration")
+    embedding_config: Mapped[Optional[dict]] = mapped_column(
+        EmbeddingConfigColumn, 
+        nullable=True,
+        doc="Embedding configuration"
+    )
     
     # Vector embedding field based on database type
     if settings.mirix_pg_uri_no_default:
         from pgvector.sqlalchemy import Vector
-        details_embedding = mapped_column(Vector(MAX_EMBEDDING_DIM))
-        name_embedding = mapped_column(Vector(MAX_EMBEDDING_DIM))
-        summary_embedding = mapped_column(Vector(MAX_EMBEDDING_DIM))
+        details_embedding = mapped_column(Vector(MAX_EMBEDDING_DIM), nullable=True)
+        name_embedding = mapped_column(Vector(MAX_EMBEDDING_DIM), nullable=True)
+        summary_embedding = mapped_column(Vector(MAX_EMBEDDING_DIM), nullable=True)
     else:
-        details_embedding = Column(CommonVector)
-        name_embedding = Column(CommonVector)
-        summary_embedding = Column(CommonVector)
+        details_embedding = Column(CommonVector, nullable=True)
+        name_embedding = Column(CommonVector, nullable=True)
+        summary_embedding = Column(CommonVector, nullable=True)
 
     @declared_attr
     def organization(cls) -> Mapped["Organization"]:

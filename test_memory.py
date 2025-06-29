@@ -945,7 +945,7 @@ def test_all_memories():
     # Initialize the agent with config file
     agent = AgentWrapper("configs/mirix.yaml")
     
-    agent.save_agent("./tmp/temp_agent")
+    # agent.save_agent("./tmp/temp_agent")
 
     try:
         # Phase 1: Direct memory operations (manager method calls)
@@ -959,9 +959,8 @@ def test_all_memories():
         
         print("All memory tests completed successfully!")
 
-        print("Loading agent from saved state...")
-
-        agent = AgentWrapper("configs/mirix.yaml", load_from="./tmp/temp_agent")
+        # print("Loading agent from saved state...")
+        # agent = AgentWrapper("configs/mirix.yaml", load_from="./tmp/temp_agent")
         
     except Exception as e:
         print(f"Error during testing: {e}")
@@ -1935,6 +1934,9 @@ def test_resource_memory_update_indirect(agent):
     print("Indirect resource memory update tests completed.\n")
 
 if __name__ == "__main__":
+
+    delete_after_test = True
+
     test_all_memories() 
     # test_greeting_with_images()
     # run_file_tests()

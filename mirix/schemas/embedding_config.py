@@ -60,7 +60,15 @@ class EmbeddingConfig(BaseModel):
                 embedding_endpoint_type="openai",
                 embedding_endpoint="https://api.openai.com/v1",
                 embedding_dim=1536,
-                embedding_chunk_size=300,
+                embedding_chunk_size=8191,
+            )
+        elif model_name == "text-embedding-004" or (not model_name and provider == "google_ai"):
+            return cls(
+                embedding_model="text-embedding-004",
+                embedding_endpoint_type="google_ai",
+                embedding_endpoint="https://generativelanguage.googleapis.com",
+                embedding_dim=768,
+                embedding_chunk_size=2048,
             )
         elif model_name == "mirix":
             return cls(

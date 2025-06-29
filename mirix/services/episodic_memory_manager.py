@@ -21,6 +21,7 @@ from mirix.schemas.agent import AgentState
 from mirix.embeddings import embedding_model, parse_and_chunk_text
 from mirix.services.utils import build_query, update_timezone
 from mirix.helpers.converters import deserialize_vector
+from mirix.constants import BUILD_EMBEDDINGS_FOR_MEMORY
 
 class EpisodicMemoryManager:
     """Manager class to handle business logic related to Episodic episodic_memory items."""
@@ -219,10 +220,17 @@ class EpisodicMemoryManager:
 
         try:
 
-            # TODO: need to check if we need to chunk the text
-            embed_model = embedding_model(agent_state.embedding_config)
-            details_embedding = embed_model.get_text_embedding(details)
-            summary_embedding = embed_model.get_text_embedding(summary)
+            # Conditionally calculate embeddings based on BUILD_EMBEDDINGS_FOR_MEMORY flag
+            if BUILD_EMBEDDINGS_FOR_MEMORY:
+                # TODO: need to check if we need to chunk the text
+                embed_model = embedding_model(agent_state.embedding_config)
+                details_embedding = embed_model.get_text_embedding(details)
+                summary_embedding = embed_model.get_text_embedding(summary)
+                embedding_config = agent_state.embedding_config
+            else:
+                details_embedding = None
+                summary_embedding = None
+                embedding_config = None
 
             event = self.create_episodic_memory(
                 PydanticEpisodicEvent(
@@ -235,7 +243,7 @@ class EpisodicMemoryManager:
                     organization_id=organization_id,
                     summary_embedding=summary_embedding,
                     details_embedding=details_embedding,
-                    embedding_config=agent_state.embedding_config,
+                    embedding_config=embedding_config,
                     last_modify={"timestamp": datetime.now(dt.timezone.utc).isoformat(), "operation": "created"},
                 )
             )

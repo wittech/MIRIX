@@ -21,6 +21,7 @@ from sqlalchemy import select, func, text
 from mirix.services.utils import build_query, update_timezone
 from mirix.settings import settings
 from mirix.helpers.converters import deserialize_vector
+from mirix.constants import BUILD_EMBEDDINGS_FOR_MEMORY
 
 class ResourceMemoryManager:
     """Manager class to handle logic related to Resource/Workspace Memory Items."""
@@ -570,8 +571,14 @@ class ResourceMemoryManager:
         """Create a new resource memory item."""
         try:
 
-            embed_model = embedding_model(agent_state.embedding_config)
-            summary_embedding = embed_model.get_text_embedding(summary)
+            # Conditionally calculate embeddings based on BUILD_EMBEDDINGS_FOR_MEMORY flag
+            if BUILD_EMBEDDINGS_FOR_MEMORY:
+                embed_model = embedding_model(agent_state.embedding_config)
+                summary_embedding = embed_model.get_text_embedding(summary)
+                embedding_config = agent_state.embedding_config
+            else:
+                summary_embedding = None
+                embedding_config = None
 
             resource = self.create_item(
                 item_data=PydanticResourceMemoryItem(
@@ -582,7 +589,7 @@ class ResourceMemoryManager:
                     tree_path=tree_path or [],
                     organization_id=organization_id,
                     summary_embedding=summary_embedding,
-                    embedding_config=agent_state.embedding_config,
+                    embedding_config=embedding_config,
                 )
             )
             return resource

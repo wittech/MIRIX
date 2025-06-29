@@ -20,6 +20,7 @@ from difflib import SequenceMatcher
 from mirix.services.utils import build_query, update_timezone
 from mirix.settings import settings
 from mirix.helpers.converters import deserialize_vector
+from mirix.constants import BUILD_EMBEDDINGS_FOR_MEMORY
 
 
 class KnowledgeVaultManager:
@@ -451,8 +452,14 @@ class KnowledgeVaultManager:
         """Insert knowledge into the knowledge vault."""
         try:
 
-            embed_model = embedding_model(agent_state.embedding_config)
-            caption_embedding = embed_model.get_text_embedding(caption)
+            # Conditionally calculate embeddings based on BUILD_EMBEDDINGS_FOR_MEMORY flag
+            if BUILD_EMBEDDINGS_FOR_MEMORY:
+                embed_model = embedding_model(agent_state.embedding_config)
+                caption_embedding = embed_model.get_text_embedding(caption)
+                embedding_config = agent_state.embedding_config
+            else:
+                caption_embedding = None
+                embedding_config = None
 
             knowledge = self.create_item(
                 PydanticKnowledgeVaultItem(
@@ -463,7 +470,7 @@ class KnowledgeVaultManager:
                     secret_value=secret_value,
                     organization_id=organization_id,
                     caption_embedding=caption_embedding,
-                    embedding_config=agent_state.embedding_config,
+                    embedding_config=embedding_config,
                 )
             )
             return knowledge

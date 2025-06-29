@@ -25,6 +25,7 @@ from sqlalchemy import Select, func, literal, select, union_all
 from mirix.services.utils import build_query, update_timezone
 from rapidfuzz import fuzz
 from mirix.settings import settings
+from mirix.constants import BUILD_EMBEDDINGS_FOR_MEMORY
 
 class ProceduralMemoryManager:
     """Manager class to handle business logic related to Procedural Memory Items."""
@@ -658,10 +659,17 @@ class ProceduralMemoryManager:
         
         try:
 
-            # TODO: need to check if we need to chunk the text
-            embed_model = embedding_model(agent_state.embedding_config)
-            summary_embedding = embed_model.get_text_embedding(summary)
-            steps_embedding = embed_model.get_text_embedding("\n".join(steps))
+            # Conditionally calculate embeddings based on BUILD_EMBEDDINGS_FOR_MEMORY flag
+            if BUILD_EMBEDDINGS_FOR_MEMORY:
+                # TODO: need to check if we need to chunk the text
+                embed_model = embedding_model(agent_state.embedding_config)
+                summary_embedding = embed_model.get_text_embedding(summary)
+                steps_embedding = embed_model.get_text_embedding("\n".join(steps))
+                embedding_config = agent_state.embedding_config
+            else:
+                summary_embedding = None
+                steps_embedding = None
+                embedding_config = None
 
             procedure = self.create_item(
                 item_data=PydanticProceduralMemoryItem(
@@ -672,7 +680,7 @@ class ProceduralMemoryManager:
                     organization_id=organization_id,
                     summary_embedding=summary_embedding,
                     steps_embedding=steps_embedding,
-                    embedding_config=agent_state.embedding_config,
+                    embedding_config=embedding_config,
                 ),
             )
             return procedure

@@ -194,6 +194,17 @@ def embedding_model(config: EmbeddingConfig, user_id: Optional[uuid.UUID] = None
         )
         return model
 
+    elif endpoint_type == "google_ai":
+        # Use Google AI (Gemini) for embeddings
+        from llama_index.embeddings.google_genai import GoogleGenAIEmbedding
+        
+        model = GoogleGenAIEmbedding(
+            model_name=config.embedding_model,
+            api_key=model_settings.gemini_api_key,
+            api_base=config.embedding_endpoint,
+        )
+        return model
+
     elif endpoint_type == "azure":
         assert all(
             [

@@ -28,6 +28,7 @@ rapidfuzz
 rank-bm25
 psutil
 llama_index
+llama-index-embeddings-google-genai
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
 SpeechRecognition

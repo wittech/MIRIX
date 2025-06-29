@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 from datetime import datetime
 import datetime as dt
 
@@ -81,14 +81,18 @@ class ResourceMemoryItem(SqlalchemyBase, OrganizationMixin):
         doc="Arbitrary additional metadata as JSON (tags, creation date, personal notes, etc.)"
     )
 
-    embedding_config: Mapped[dict] = mapped_column(EmbeddingConfigColumn, doc="Embedding configuration")
+    embedding_config: Mapped[Optional[dict]] = mapped_column(
+        EmbeddingConfigColumn, 
+        nullable=True,
+        doc="Embedding configuration"
+    )
     
     # Vector embedding field based on database type
     if settings.mirix_pg_uri_no_default:
         from pgvector.sqlalchemy import Vector
-        summary_embedding = mapped_column(Vector(MAX_EMBEDDING_DIM))
+        summary_embedding = mapped_column(Vector(MAX_EMBEDDING_DIM), nullable=True)
     else:
-        summary_embedding = Column(CommonVector)
+        summary_embedding = Column(CommonVector, nullable=True)
 
     @declared_attr
     def organization(cls) -> Mapped["Organization"]:
