@@ -180,6 +180,94 @@
   font-size: 13px;
 }
 
+/* Markdown content styles */
+.markdown-content {
+  line-height: 1.5;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+.markdown-content p {
+  margin: 0 0 8px 0;
+}
+
+.markdown-content p:last-child {
+  margin-bottom: 0;
+}
+
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3,
+.markdown-content h4,
+.markdown-content h5,
+.markdown-content h6 {
+  margin: 16px 0 8px 0;
+  font-weight: 600;
+}
+
+.markdown-content h1:first-child,
+.markdown-content h2:first-child,
+.markdown-content h3:first-child,
+.markdown-content h4:first-child,
+.markdown-content h5:first-child,
+.markdown-content h6:first-child {
+  margin-top: 0;
+}
+
+.markdown-content blockquote {
+  border-left: 4px solid #ddd;
+  padding-left: 16px;
+  margin: 8px 0;
+  color: #666;
+}
+
+.chat-bubble.user .markdown-content blockquote {
+  border-left-color: rgba(255, 255, 255, 0.5);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.markdown-content table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 8px 0;
+}
+
+.markdown-content th,
+.markdown-content td {
+  border: 1px solid #ddd;
+  padding: 6px 12px;
+  text-align: left;
+}
+
+.markdown-content th {
+  background-color: #f8f9fa;
+  font-weight: 600;
+}
+
+.chat-bubble.user .markdown-content th {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.chat-bubble.user .markdown-content th,
+.chat-bubble.user .markdown-content td {
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+/* KaTeX math styling */
+.katex {
+  font-size: 1em !important;
+}
+
+.katex-display {
+  margin: 12px 0 !important;
+  text-align: center;
+}
+
+/* Underline support */
+.markdown-content u {
+  text-decoration: underline;
+}
+
 /* Responsive design */
 @media (max-width: 768px) {
   .chat-bubble {

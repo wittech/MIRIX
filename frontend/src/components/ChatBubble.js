@@ -18,18 +18,32 @@ const ChatBubble = ({ message }) => {
       return <div className="error-content">{content}</div>;
     }
 
-    // Simple approach: just render the text with preserved whitespace
-    // Split by newlines and render each line as a separate element
-    const lines = (content || '').split('\n');
-    
+    // Just render the markdown content directly since backend already sends markdown
     return (
-      <div className="content-text">
-        {lines.map((line, index) => (
-          <div key={index} className="content-line">
-            {line || '\u00A0'} {/* Use non-breaking space for empty lines */}
-          </div>
-        ))}
-      </div>
+      <ReactMarkdown
+        components={{
+          code({node, inline, className, children, ...props}) {
+            const match = /language-(\w+)/.exec(className || '');
+            return !inline && match ? (
+              <SyntaxHighlighter
+                style={tomorrow}
+                language={match[1]}
+                PreTag="div"
+                {...props}
+              >
+                {String(children).replace(/\n$/, '')}
+              </SyntaxHighlighter>
+            ) : (
+              <code className={className} {...props}>
+                {children}
+              </code>
+            );
+          }
+        }}
+        className="markdown-content"
+      >
+        {content || ''}
+      </ReactMarkdown>
     );
   };
 
