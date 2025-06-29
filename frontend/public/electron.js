@@ -517,6 +517,42 @@ ipcMain.handle('read-image-base64', async (event, filepath) => {
   }
 });
 
+// IPC handler for deleting screenshot files (used when screenshots are too similar)
+ipcMain.handle('delete-screenshot', async (event, filepath) => {
+  try {
+    if (!fs.existsSync(filepath)) {
+      safeLog.warn(`Tried to delete non-existent file: ${filepath}`);
+      return {
+        success: true, // Consider it successful if file doesn't exist
+        message: 'File does not exist'
+      };
+    }
+
+    // Only allow deletion of files in the screenshots directory for security
+    const imagesDir = ensureScreenshotDirectory();
+    const normalizedFilepath = path.resolve(filepath);
+    const normalizedImagesDir = path.resolve(imagesDir);
+    
+    if (!normalizedFilepath.startsWith(normalizedImagesDir)) {
+      throw new Error('Can only delete files in the screenshots directory');
+    }
+
+    fs.unlinkSync(filepath);
+    safeLog.log(`Screenshot deleted (too similar): ${filepath}`);
+
+    return {
+      success: true,
+      message: 'File deleted successfully'
+    };
+  } catch (error) {
+    safeLog.error('Failed to delete screenshot:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+});
+
 // Handle app protocol for deep linking (optional)
 if (process.defaultApp) {
   if (process.argv.length >= 2) {

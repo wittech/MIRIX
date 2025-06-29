@@ -1,16 +1,16 @@
 import os
 import time
 import uuid
-import queue
 import threading
+import logging
 from PIL import Image
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError, as_completed
 
 
 class UploadManager:
     """
-    Handles background uploading of files to cloud storage.
-    Provides async upload capabilities with proper cleanup.
+    Simplified upload manager that handles each image upload independently.
+    Each upload gets a 10-second timeout and either succeeds or fails immediately.
     """
     
     def __init__(self, google_client, client, existing_files, uri_to_create_time):
@@ -19,19 +19,16 @@ class UploadManager:
         self.existing_files = existing_files
         self.uri_to_create_time = uri_to_create_time
         
-        # Initialize upload queue and workers for background image uploading
-        self._upload_queue = queue.Queue()
-        self._upload_results = {}  # uuid -> file_ref or exception
-        self._upload_results_lock = threading.Lock()
-        self._upload_workers_running = True
-        self._cleanup_threshold = 100  # Clean up after this many resolved uploads accumulate
+        # Initialize logger
+        self.logger = logging.getLogger(f"Mirix.UploadManager")
+        self.logger.setLevel(logging.INFO)
         
-        # Start background upload workers
-        self._upload_workers = []
-        for i in range(4):  # Use 2 worker threads for parallel uploads
-            worker = threading.Thread(target=self._upload_worker, daemon=True)
-            worker.start()
-            self._upload_workers.append(worker)
+        # Simple tracking: upload_uuid -> {'status': 'pending'/'completed'/'failed', 'result': file_ref or None}
+        self._upload_status = {}
+        self._upload_lock = threading.Lock()
+        
+        # Thread pool for concurrent uploads (max 4 simultaneous uploads)
+        self._executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="upload_worker")
     
     def _compress_image(self, image_path, quality=85, max_size=(1920, 1080)):
         """Compress image to reduce upload time while maintaining reasonable quality"""
@@ -44,241 +41,178 @@ class UploadManager:
                 # Resize if too large
                 img.thumbnail(max_size, Image.Resampling.LANCZOS)
                 
-                # Create compressed version with proper extension handling
+                # Create compressed version
                 base_path = os.path.splitext(image_path)[0]
                 compressed_path = f"{base_path}_compressed.jpg"
                 img.save(compressed_path, 'JPEG', quality=quality, optimize=True)
                 
-                # Verify the compressed file was actually created
-                if os.path.exists(compressed_path):
-                    return compressed_path
-                else:
-                    return None
-                
-                # # Get file sizes for comparison
-                # original_size = os.path.getsize(image_path)
-                # compressed_size = os.path.getsize(compressed_path)
+                return compressed_path if os.path.exists(compressed_path) else None
                 
         except Exception as e:
-            print(f"Image compression failed for {image_path}: {e}")
+            self.logger.error(f"Image compression failed for {image_path}: {e}")
             return None
     
-    def _upload_worker(self):
-        """Background worker that processes the upload queue"""
-        while self._upload_workers_running:
-            try:
-                # Get upload task from queue (blocking with timeout)
-                upload_task = self._upload_queue.get(timeout=1.0)
-                if upload_task is None:  # Shutdown signal
-                    break
-                    
-                upload_uuid, filename, timestamp, compressed = upload_task
-                
-                try:
-                    # Perform the actual upload
-                    if self.client.server.cloud_file_mapping_manager.check_if_existing(local_file_id=filename):
-                        cloud_file_name = self.client.server.cloud_file_mapping_manager.get_cloud_file(local_file_id=filename)
-                        file_ref = [x for x in self.existing_files if x.name == cloud_file_name][0]
-                    else:
-                        # Use compressed file if available and exists, otherwise use original
-                        upload_file = filename  # Default to original file
-                        if compressed and os.path.exists(compressed):
-                            upload_file = compressed
-                        elif compressed and not os.path.exists(compressed):
-                            print(f"Warning: Compressed file {compressed} does not exist, using original file {filename}")
-                        
-                        t1 = time.time()
-                        
-                        # Retry upload up to 3 times with 1 second delay between attempts
-                        max_retries = 3
-                        retry_delay = 1.0
-                        upload_timeout = 30.0  # 30 second timeout per upload attempt
-                        upload_successful = False
-                        
-                        for attempt in range(max_retries):
-                            try:
-                                # Use ThreadPoolExecutor to implement timeout for upload
-                                with ThreadPoolExecutor(max_workers=1) as executor:
-                                    upload_start_time = time.time()
-                                    future = executor.submit(self.google_client.files.upload, file=upload_file)
-                                    
-                                    try:
-                                        file_ref = future.result(timeout=upload_timeout)
-                                        upload_end_time = time.time()
-                                        upload_duration = upload_end_time - upload_start_time
-                                        print(f"Upload completed in {upload_duration:.2f} seconds for file {upload_file}")
-                                        upload_successful = True
-                                        break
-                                    except FutureTimeoutError:
-                                        # Cancel the future to clean up resources
-                                        future.cancel()
-                                        upload_duration = time.time() - upload_start_time
-                                        raise Exception(f"Upload timed out after {upload_duration:.2f} seconds (limit: {upload_timeout}s)")
-                                        
-                            except Exception as e:
-                                error_msg = f"Upload attempt {attempt + 1} failed for file {upload_file}: {e}"
-                                print(error_msg)
-                                
-                                if attempt < max_retries - 1:  # Not the last attempt
-                                    print(f"Retrying in {retry_delay} seconds...")
-                                    time.sleep(retry_delay)
-                                else:  # Last attempt failed
-                                    # If we were trying to upload compressed file, try original as fallback
-                                    if upload_file != filename:
-                                        print(f"All attempts failed for compressed file, trying original file {filename}")
-                                        for fallback_attempt in range(max_retries):
-                                            try:
-                                                # Apply timeout to fallback attempts as well
-                                                with ThreadPoolExecutor(max_workers=1) as executor:
-                                                    fallback_start_time = time.time()
-                                                    future = executor.submit(self.google_client.files.upload, file=filename)
-                                                    
-                                                    try:
-                                                        file_ref = future.result(timeout=upload_timeout)
-                                                        fallback_end_time = time.time()
-                                                        fallback_duration = fallback_end_time - fallback_start_time
-                                                        print(f"Fallback upload completed in {fallback_duration:.2f} seconds for file {filename}")
-                                                        upload_successful = True
-                                                        # Update upload_file for cleanup logic
-                                                        upload_file = filename
-                                                        break
-                                                    except FutureTimeoutError:
-                                                        # Cancel the future to clean up resources
-                                                        future.cancel()
-                                                        fallback_duration = time.time() - fallback_start_time
-                                                        raise Exception(f"Fallback upload timed out after {fallback_duration:.2f} seconds (limit: {upload_timeout}s)")
-                                                        
-                                            except Exception as fallback_e:
-                                                print(f"Fallback attempt {fallback_attempt + 1} failed for file {filename}: {fallback_e}")
-                                                if fallback_attempt < max_retries - 1:
-                                                    print(f"Retrying fallback in {retry_delay} seconds...")
-                                                    time.sleep(retry_delay)
-                                    
-                                    if not upload_successful:
-                                        raise Exception(f"Failed to upload file after {max_retries} attempts for both compressed and original files")
-                        
-                        if not upload_successful:
-                            raise Exception(f"Upload failed after {max_retries} attempts")
-                            
-                        t2 = time.time()
-                        
-                        print(f"Uploaded file {file_ref.name} in {t2 - t1} seconds")
+    def _upload_single_file(self, upload_uuid, filename, timestamp, compressed_file):
+        """Upload a single file with 5-second timeout"""
+        try:
 
-                        self.uri_to_create_time[file_ref.uri] = {'create_time': file_ref.create_time, 'filename': file_ref.name}
-                        self.client.server.cloud_file_mapping_manager.add_mapping(
-                            local_file_id=filename, 
-                            cloud_file_id=file_ref.uri, 
-                            timestamp=timestamp, 
-                            force_add=True
-                        )
-                        
-                        # Clean up compressed file if it was created and used
-                        if compressed and compressed != filename and upload_file == compressed and os.path.exists(compressed):
-                            os.remove(compressed)
-                    
-                    # Store successful result
-                    with self._upload_results_lock:
-                        self._upload_results[upload_uuid] = file_ref
-                        
-                except Exception as e:
-                    # Store exception for later handling
-                    with self._upload_results_lock:
-                        self._upload_results[upload_uuid] = e
+            # Check if file already exists in cloud
+            if self.client.server.cloud_file_mapping_manager.check_if_existing(local_file_id=filename):
+                cloud_file_name = self.client.server.cloud_file_mapping_manager.get_cloud_file(local_file_id=filename)
+                file_ref = [x for x in self.existing_files if x.name == cloud_file_name][0]
                 
-                finally:
-                    self._upload_queue.task_done()
-                    # Periodically clean up old results
-                    self._maybe_cleanup_old_results()
-                    
-            except queue.Empty:
-                continue  # Timeout, check shutdown flag and continue
-            except Exception as e:
-                pass
+                with self._upload_lock:
+                    self._upload_status[upload_uuid] = {'status': 'completed', 'result': file_ref}
+                return
+            
+            # Choose file to upload (compressed if available, otherwise original)
+            upload_file = compressed_file if compressed_file and os.path.exists(compressed_file) else filename
+            
+            # Upload with 5-second timeout
+            upload_start_time = time.time()
+            file_ref = self.google_client.files.upload(file=upload_file)
+            upload_duration = time.time() - upload_start_time
+            
+            self.logger.info(f"Upload completed in {upload_duration:.2f} seconds for file {upload_file}")
+            
+            # Update tracking and database
+            self.uri_to_create_time[file_ref.uri] = {'create_time': file_ref.create_time, 'filename': file_ref.name}
+            self.client.server.cloud_file_mapping_manager.add_mapping(
+                local_file_id=filename, 
+                cloud_file_id=file_ref.uri, 
+                timestamp=timestamp, 
+                force_add=True
+            )
+            
+            # Clean up compressed file if it was created and used
+            if compressed_file and compressed_file != filename and upload_file == compressed_file:
+                try:
+                    os.remove(compressed_file)
+                    self.logger.info(f"Removed compressed file: {compressed_file}")
+                except:
+                    pass  # Ignore cleanup errors
+            
+            # Mark as completed
+            with self._upload_lock:
+                self._upload_status[upload_uuid] = {'status': 'completed', 'result': file_ref}
+                
+        except Exception as e:
+            self.logger.error(f"Upload failed for {filename}: {e}")
+            # Mark as failed
+            with self._upload_lock:
+                self._upload_status[upload_uuid] = {'status': 'failed', 'result': None}
+            
+            # Clean up compressed file on failure too
+            if compressed_file and compressed_file != filename and os.path.exists(compressed_file):
+                try:
+                    os.remove(compressed_file)
+                except:
+                    pass
     
     def upload_file_async(self, filename, timestamp, compress=True):
-        """Queue an image for background upload and return immediately with a placeholder"""
+        """Start an async upload and return immediately with a placeholder"""
         upload_uuid = str(uuid.uuid4())
         
-        # Optionally compress the image first
+        # Compress image if requested
         compressed_file = None
         if compress and filename.lower().endswith(('.png', '.jpg', '.jpeg')):
             compressed_file = self._compress_image(filename)
         
-        # Queue the upload task
-        self._upload_queue.put((upload_uuid, filename, timestamp, compressed_file))
+        # Initialize status
+        with self._upload_lock:
+            self._upload_status[upload_uuid] = {'status': 'pending', 'result': None}
         
-        # Return a placeholder that can be resolved later
+        # Submit upload task with 5-second timeout
+        future = self._executor.submit(self._upload_single_file, upload_uuid, filename, timestamp, compressed_file)
+        
+        # Set up automatic timeout handling
+        def timeout_handler():
+            time.sleep(10.0)  # Wait 10 seconds
+            with self._upload_lock:
+                if self._upload_status.get(upload_uuid, {}).get('status') == 'pending':
+                    self.logger.info(f"Upload timeout (5s) for {filename}, marking as failed")
+                    self._upload_status[upload_uuid] = {'status': 'failed', 'result': None}
+                    future.cancel()  # Try to cancel the upload
+        
+        # Start timeout handler in separate thread
+        timeout_thread = threading.Thread(target=timeout_handler, daemon=True)
+        timeout_thread.start()
+        
+        # Return placeholder
         return {'upload_uuid': upload_uuid, 'filename': filename, 'pending': True}
     
-    def wait_for_upload(self, placeholder, timeout=30):
-        """Wait for a background upload to complete and return the file reference"""
+    def get_upload_status(self, placeholder):
+        """Get upload status and result in one call"""
         if not isinstance(placeholder, dict) or not placeholder.get('pending'):
-            return placeholder  # Already resolved
+            return {'status': 'completed', 'result': placeholder}  # Already resolved
             
         upload_uuid = placeholder['upload_uuid']
-        start_time = time.time()
         
+        with self._upload_lock:
+            if upload_uuid not in self._upload_status:
+                # Upload was either never started or already cleaned up
+                # For cleaned up uploads, we can't tell if they succeeded or failed
+                return {'status': 'unknown', 'result': None}
+            
+            status_info = self._upload_status.get(upload_uuid, {})
+            status = status_info.get('status', 'pending')
+            result = status_info.get('result')
+            
+            # Don't clean up here - let cleanup_resolved_upload handle it
+            return {'status': status, 'result': result}
+    
+    def try_resolve_upload(self, placeholder):
+        """Legacy method for backward compatibility"""
+        status_info = self.get_upload_status(placeholder)
+        if status_info['status'] == 'completed':
+            return status_info['result']
+        else:
+            return None
+    
+    def wait_for_upload(self, placeholder, timeout=30):
+        """Wait for upload to complete (legacy method, now just polls get_upload_status)"""
+        if not isinstance(placeholder, dict) or not placeholder.get('pending'):
+            return placeholder
+        
+        start_time = time.time()
         while time.time() - start_time < timeout:
-            with self._upload_results_lock:
-                if upload_uuid in self._upload_results:
-                    result = self._upload_results.get(upload_uuid)  # Use get() instead of pop()
-                    if isinstance(result, Exception):
-                        # Remove failed upload from results to avoid memory leaks
-                        self._upload_results.pop(upload_uuid, None)
-                        raise result
-                    return result
+            upload_status = self.get_upload_status(placeholder)
+            
+            if upload_status['status'] == 'completed':
+                return upload_status['result']
+            elif upload_status['status'] == 'failed':
+                raise Exception(f"Upload failed for {placeholder['filename']}")
+            
             time.sleep(0.1)
         
         raise TimeoutError(f"Upload timeout after {timeout}s for {placeholder['filename']}")
     
-    def try_resolve_upload(self, placeholder):
-        """Try to resolve an upload without blocking. Returns None if still pending."""
-        if not isinstance(placeholder, dict) or not placeholder.get('pending'):
-            return placeholder  # Already resolved
-            
-        upload_uuid = placeholder['upload_uuid']
-        with self._upload_results_lock:
-            if upload_uuid in self._upload_results:
-                result = self._upload_results.get(upload_uuid)  # Use get() instead of pop()
-                if isinstance(result, Exception):
-                    # Remove failed upload from results to avoid memory leaks
-                    self._upload_results.pop(upload_uuid, None)
-                    return None
-                return result
-        return None  # Still pending
-    
     def upload_file(self, filename, timestamp):
-        """Legacy synchronous upload method - now uses async under the hood"""
+        """Legacy synchronous upload method"""
         placeholder = self.upload_file_async(filename, timestamp)
-        return self.wait_for_upload(placeholder, timeout=90)
+        return self.wait_for_upload(placeholder, timeout=10)  # Reduced timeout since individual uploads timeout at 5s
     
     def cleanup_resolved_upload(self, placeholder):
-        """Remove a resolved upload result from memory to prevent memory leaks."""
+        """Clean up resolved upload from tracking"""
         if not isinstance(placeholder, dict) or not placeholder.get('pending'):
             return  # Not a pending placeholder
             
         upload_uuid = placeholder['upload_uuid']
-        with self._upload_results_lock:
-            self._upload_results.pop(upload_uuid, None)
-    
-    def _maybe_cleanup_old_results(self):
-        """Clean up old upload results if we've accumulated too many."""
-        with self._upload_results_lock:
-            if len(self._upload_results) > self._cleanup_threshold:
-                # Keep only the most recent results (this is a simple cleanup strategy)
-                # In a more sophisticated implementation, we could track timestamps
-                # For now, just clear all since they should have been processed by now
-                # A more sophisticated approach would track access times
-                self._upload_results.clear()
+        with self._upload_lock:
+            self._upload_status.pop(upload_uuid, None)
     
     def cleanup_upload_workers(self):
-        """Gracefully shut down upload workers"""
-        self._upload_workers_running = False
-        
-        # Send shutdown signals to all workers
-        for _ in self._upload_workers:
-            self._upload_queue.put(None)
-        
-        # Wait for workers to finish
-        for worker in self._upload_workers:
-            worker.join(timeout=5.0) 
+        """Gracefully shut down the thread pool"""
+        try:
+            self._executor.shutdown(wait=True, timeout=10)
+        except:
+            pass  # Ignore shutdown errors
+    
+    def get_upload_status_summary(self):
+        """Get a summary of current upload statuses (for debugging)"""
+        with self._upload_lock:
+            summary = {}
+            for uuid, info in self._upload_status.items():
+                status = info.get('status', 'unknown')
+                summary[status] = summary.get(status, 0) + 1
+            return summary 

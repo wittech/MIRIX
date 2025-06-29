@@ -17,6 +17,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Image reading function for similarity comparison
   readImageAsBase64: (filepath) => ipcRenderer.invoke('read-image-base64', filepath),
   
+  // Delete screenshot function (for removing similar screenshots)
+  deleteScreenshot: (filepath) => ipcRenderer.invoke('delete-screenshot', filepath),
+  
   // Menu event listeners - wrap callbacks to prevent passing non-serializable event objects
   onMenuNewChat: (callback) => {
     const wrappedCallback = (event, ...args) => callback(...args);

@@ -44,9 +44,8 @@ class TemporaryMessageAccumulator:
         # URI tracking for cloud files
         self.uri_to_create_time = {}
         
-        # Upload timeout tracking (add timeout protection)
-        self.upload_timeout_seconds = 10  # 10 seconds timeout for uploads
-        self.upload_start_times = {}  # Track when uploads started
+        # Upload tracking for cleanup
+        self.upload_start_times = {}  # Track when uploads started for cleanup purposes
     
     def add_message(self, full_message, timestamp, delete_after_upload=True, async_upload=True):
         """Add a message to temporary storage."""
@@ -133,52 +132,12 @@ class TemporaryMessageAccumulator:
             {'role': 'assistant', 'content': assistant_response}
         ])
     
-    def _detect_and_cleanup_timed_out_uploads(self):
-        """Detect and clean up uploads that have been pending for too long."""
-        current_time = time.time()
-        timed_out_placeholders = []
-        
-        # Find timed out uploads
-        for placeholder_id, start_time in list(self.upload_start_times.items()):
-            if current_time - start_time > self.upload_timeout_seconds:
-                timed_out_placeholders.append(placeholder_id)
-        
-        if not timed_out_placeholders:
-            return []
-        
-        # Remove timed out messages from temporary_messages
-        messages_to_remove = []
-        with self._temporary_messages_lock:
-            for i, (timestamp, item) in enumerate(self.temporary_messages):
-                if 'image_uris' in item and item['image_uris']:
-                    item_has_timed_out_upload = False
-                    for file_ref in item['image_uris']:
-                        if isinstance(file_ref, dict) and file_ref.get('pending'):
-                            placeholder_id = id(file_ref)
-                            if placeholder_id in timed_out_placeholders:
-                                item_has_timed_out_upload = True
-                                break
-                    
-                    if item_has_timed_out_upload:
-                        messages_to_remove.append(i)
-            
-            # Remove messages with timed out uploads (in reverse order to maintain indices)
-            for i in reversed(messages_to_remove):
-                removed_timestamp, removed_item = self.temporary_messages.pop(i)
-        
-        # Clean up tracking for timed out uploads
-        for placeholder_id in timed_out_placeholders:
-            self.upload_start_times.pop(placeholder_id, None)
-        
-        return messages_to_remove
+
     
     def should_absorb_content(self):
         """Check if content should be absorbed into memory and return ready messages."""
         
         if self.needs_upload:
-            # First, detect and cleanup any timed out uploads
-            removed_messages = self._detect_and_cleanup_timed_out_uploads()
-
             with self._temporary_messages_lock:
                 ready_messages = []
                 
@@ -196,20 +155,30 @@ class TemporaryMessageAccumulator:
                         for j, file_ref in enumerate(item['image_uris']):
                             if isinstance(file_ref, dict) and file_ref.get('pending'):
                                 placeholder_id = id(file_ref)
-                                pending_duration = time.time() - self.upload_start_times.get(placeholder_id, time.time())
                                 
-                                # Check if upload is complete
-                                resolved_ref = self.upload_manager.try_resolve_upload(file_ref) if self.upload_manager else None
-                                if resolved_ref is None:
+                                # Get upload status
+                                upload_status = self.upload_manager.get_upload_status(file_ref)
+                                
+                                if upload_status['status'] == 'completed':
+                                    # Upload completed, use the resolved reference
+                                    processed_image_uris.append(upload_status['result'])
+                                    completed_count += 1
+                                    # Note: Don't clean up here, this is just a check
+                                elif upload_status['status'] == 'failed':
+                                    # Upload failed, skip this image but continue processing other images
+                                    print(f"Skipping failed upload for image {j} in message {i}")
+                                    # Note: Don't clean up here, this is just a check
+                                    continue
+                                elif upload_status['status'] == 'unknown':
+                                    # Upload was cleaned up, treat as failed
+                                    print(f"Skipping unknown/cleaned upload for image {j} in message {i}")
+                                    # Note: Don't clean up here, this is just a check
+                                    continue
+                                else:
+                                    # Still pending
                                     has_pending_uploads = True
                                     pending_count += 1
                                     break
-                                else:
-                                    # Upload completed, use the resolved reference
-                                    processed_image_uris.append(resolved_ref)
-                                    completed_count += 1
-                                    # Clean up tracking for completed upload
-                                    self.upload_start_times.pop(placeholder_id, None)
                             else:
                                 # Already uploaded file reference
                                 processed_image_uris.append(file_ref)
@@ -227,7 +196,6 @@ class TemporaryMessageAccumulator:
                         # No images or already processed, add to ready list
                         ready_messages.append((timestamp, item_copy))
 
-                
                 # Check if we have enough ready messages to process
                 if len(ready_messages) >= self.temporary_message_limit:
                     return ready_messages
@@ -249,9 +217,6 @@ class TemporaryMessageAccumulator:
     
     def get_recent_images_for_chat(self):
         """Get the most recent images for chat context (non-blocking)."""
-        # First, detect and cleanup any timed out uploads
-        removed_messages = self._detect_and_cleanup_timed_out_uploads()
-        
         with self._temporary_messages_lock:
             # Get the most recent content
             recent_limit = min(self.temporary_message_limit, len(self.temporary_messages))
@@ -268,16 +233,25 @@ class TemporaryMessageAccumulator:
                             if isinstance(file_ref, dict) and file_ref.get('pending'):
                                 placeholder_id = id(file_ref)
                                 
-                                # Check if upload completed without waiting
-                                resolved_ref = self.upload_manager.try_resolve_upload(file_ref)
-                                if resolved_ref is not None:
-                                    file_ref = resolved_ref
-                                    # Clean up tracking for completed upload
-                                    self.upload_start_times.pop(placeholder_id, None)
+                                # Get upload status
+                                upload_status = self.upload_manager.get_upload_status(file_ref)
+                                
+                                if upload_status['status'] == 'completed':
+                                    original_placeholder = file_ref  # Store original before modifying
+                                    file_ref = upload_status['result']
+                                    # Note: Don't clean up here, this is just for chat context
+                                elif upload_status['status'] == 'failed':
+                                    # Upload failed, skip this image
+                                    # Note: Don't clean up here, this is just for chat context
+                                    continue
+                                elif upload_status['status'] == 'unknown':
+                                    # Upload was cleaned up, treat as failed
+                                    # Note: Don't clean up here, this is just for chat context
+                                    continue
                                 else:
                                     continue  # Still pending, skip
+                                
                         # For non-GEMINI models: file_ref is already the image URI, use as-is
-                        
                         most_recent_images.append((timestamp, file_ref))
             
             return most_recent_images
@@ -289,10 +263,23 @@ class TemporaryMessageAccumulator:
             # Use the pre-processed ready messages
             ready_to_process = ready_messages
             
-            # Remove the processed messages from temporary_messages
+            # Remove the processed messages from temporary_messages and clean up placeholders
             with self._temporary_messages_lock:
                 # Remove processed messages from the beginning (they were processed in temporal order)
                 num_to_remove = len(ready_messages)
+                
+                # Clean up placeholders from the messages being removed
+                if self.needs_upload and self.upload_manager is not None:
+                    for i in range(min(num_to_remove, len(self.temporary_messages))):
+                        timestamp, item = self.temporary_messages[i]
+                        if 'image_uris' in item and item['image_uris']:
+                            for file_ref in item['image_uris']:
+                                if isinstance(file_ref, dict) and file_ref.get('pending'):
+                                    placeholder_id = id(file_ref)
+                                    # Clean up upload manager status and local tracking
+                                    self.upload_manager.cleanup_resolved_upload(file_ref)
+                                    self.upload_start_times.pop(placeholder_id, None)
+                
                 self.temporary_messages = self.temporary_messages[num_to_remove:]
         else:
             # Use the existing logic to separate and process messages
@@ -312,10 +299,28 @@ class TemporaryMessageAccumulator:
                             if self.needs_upload and self.upload_manager is not None:
                                 # For GEMINI models: Check if this is a pending placeholder
                                 if isinstance(file_ref, dict) and file_ref.get('pending'):
-                                    resolved_ref = self.upload_manager.try_resolve_upload(file_ref)
-                                    if resolved_ref is not None:
+                                    placeholder_id = id(file_ref)
+                                    # Get upload status
+                                    upload_status = self.upload_manager.get_upload_status(file_ref)
+                                    
+                                    if upload_status['status'] == 'completed':
                                         # Upload completed, use the result
-                                        processed_image_uris.append(resolved_ref)
+                                        processed_image_uris.append(upload_status['result'])
+                                        # Clean up both upload manager and local tracking
+                                        self.upload_manager.cleanup_resolved_upload(file_ref)
+                                        self.upload_start_times.pop(placeholder_id, None)
+                                    elif upload_status['status'] == 'failed':
+                                        # Upload failed, skip this image but continue processing
+                                        # Clean up both upload manager and local tracking
+                                        self.upload_manager.cleanup_resolved_upload(file_ref)
+                                        self.upload_start_times.pop(placeholder_id, None)
+                                        continue
+                                    elif upload_status['status'] == 'unknown':
+                                        # Upload was cleaned up, treat as failed
+                                        print(f"Skipping unknown/cleaned upload in absorb_content_into_memory")
+                                        # Only clean up local tracking since upload manager already cleaned up
+                                        self.upload_start_times.pop(placeholder_id, None)
+                                        continue
                                     else:
                                         # Still pending, keep original for next cycle
                                         has_pending_uploads = True
@@ -336,12 +341,6 @@ class TemporaryMessageAccumulator:
                     else:
                         # No images or already processed, add to ready list
                         ready_to_process.append((timestamp, item_copy))
-
-                if self.needs_upload:
-                    # Check if we have enough uploaded content to process (only for GEMINI models)
-                    uploaded_image_count = sum(len(item.get('image_uris', [])) for _, item in ready_to_process)
-                    if uploaded_image_count < self.temporary_message_limit:
-                        return  # Don't process yet, wait for more uploads
 
                 # Keep only items that are still pending (for GEMINI models) or clear all (for non-GEMINI models)
                 self.temporary_messages = pending_items
@@ -415,13 +414,13 @@ class TemporaryMessageAccumulator:
         })
 
         t1 = time.time()
-        # self._send_to_meta_memory_agent(message, agent_states)
         if SKIP_META_MEMORY_MANAGER:
             # Send to memory agents in parallel
             self._send_to_memory_agents_separately(message, set(list(self.uri_to_create_time.keys())), agent_states)
         else:
             # Send to meta memory agent
-            self._send_to_meta_memory_agent(message, set(list(self.uri_to_create_time.keys())), agent_states)
+            response, agent_type = self._send_to_meta_memory_agent(message, set(list(self.uri_to_create_time.keys())), agent_states)
+
         t2 = time.time()
         self.logger.info(f"Time taken to send to memory agents: {t2 - t1} seconds")
 
@@ -548,9 +547,10 @@ class TemporaryMessageAccumulator:
             'message_queue': self.message_queue
         }
 
-        self.message_queue.send_message_in_queue(
+        response, agent_type = self.message_queue.send_message_in_queue(
             self.client, agent_states.meta_memory_agent_state.id, payloads, 'meta_memory'
         )
+        return response, agent_type
 
     def _send_to_memory_agents_separately(self, message, existing_file_uris, agent_states):
         """Send the processed content to all memory agents in parallel."""
@@ -663,6 +663,7 @@ class TemporaryMessageAccumulator:
                     try:
                         if os.path.exists(filename):
                             os.remove(filename)
+                            self.logger.info(f"Removed file: {filename}")
                             if not os.path.exists(filename):
                                 break
                             else:
@@ -689,32 +690,14 @@ class TemporaryMessageAccumulator:
         with self._temporary_messages_lock:
             return len(self.temporary_messages)
     
-    def cleanup_timed_out_uploads(self):
-        """Public method to manually trigger cleanup of timed out uploads."""
-        removed_messages = self._detect_and_cleanup_timed_out_uploads()
-        return len(removed_messages)
-    
     def get_upload_status_summary(self):
         """Get a summary of current upload statuses for debugging."""
-        current_time = time.time()
         summary = {
             'total_messages': len(self.temporary_messages),
-            'tracked_uploads': len(self.upload_start_times),
-            'pending_uploads': [],
-            'timed_out_uploads': []
         }
         
-        for placeholder_id, start_time in self.upload_start_times.items():
-            duration = current_time - start_time
-            if duration > self.upload_timeout_seconds:
-                summary['timed_out_uploads'].append({
-                    'placeholder_id': placeholder_id,
-                    'duration': duration
-                })
-            else:
-                summary['pending_uploads'].append({
-                    'placeholder_id': placeholder_id,
-                    'duration': duration
-                })
+        # Get upload manager status if available
+        if self.upload_manager and hasattr(self.upload_manager, 'get_upload_status_summary'):
+            summary['upload_manager_status'] = self.upload_manager.get_upload_status_summary()
         
         return summary 
