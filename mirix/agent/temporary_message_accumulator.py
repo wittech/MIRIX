@@ -663,7 +663,7 @@ class TemporaryMessageAccumulator:
                     try:
                         if os.path.exists(filename):
                             os.remove(filename)
-                            self.logger.info(f"Removed file: {filename}")
+                            # self.logger.info(f"Removed file: {filename}")
                             if not os.path.exists(filename):
                                 break
                             else:

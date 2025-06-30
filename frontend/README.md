@@ -85,19 +85,19 @@ This location is consistent whether running in development or as a packaged app.
 ### Windows
 ```bash
 npm run electron-pack
-# Creates: dist/MIRIX Setup 1.0.0.exe (~150MB)
+# Creates: dist/MIRIX Setup 0.1.0.exe (~150MB)
 ```
 
 ### macOS
 ```bash
 npm run electron-pack
-# Creates: dist/MIRIX-1.0.0.dmg (~120MB)
+# Creates: dist/MIRIX-0.1.0.dmg (~120MB)
 ```
 
 ### Linux
 ```bash
 npm run electron-pack
-# Creates: dist/MIRIX-1.0.0.AppImage (~130MB)
+# Creates: dist/MIRIX-0.1.0.AppImage (~130MB)
 ```
 
 ## Project Structure

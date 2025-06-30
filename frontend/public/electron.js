@@ -379,8 +379,6 @@ ipcMain.handle('take-screenshot', async (event, options = {}) => {
     // Save screenshot
     fs.writeFileSync(filepath, imgBuffer);
     
-    safeLog.log(`Screenshot saved: ${filepath}`);
-    
     return {
       success: true,
       filepath: filepath,
@@ -538,7 +536,7 @@ ipcMain.handle('delete-screenshot', async (event, filepath) => {
     }
 
     fs.unlinkSync(filepath);
-    safeLog.log(`Screenshot deleted (too similar): ${filepath}`);
+    // safeLog.log(`Screenshot deleted (too similar): ${filepath}`);
 
     return {
       success: true,

@@ -6,7 +6,6 @@ import queuedFetch from '../utils/requestQueue';
 const ScreenshotMonitor = ({ settings }) => {
   const [isMonitoring, setIsMonitoring] = useState(false);
   const [screenshotCount, setScreenshotCount] = useState(0);
-  const [deletedCount, setDeletedCount] = useState(0);
   const [lastProcessedTime, setLastProcessedTime] = useState(null);
   const [status, setStatus] = useState('idle');
   const [error, setError] = useState(null);
@@ -29,7 +28,6 @@ const ScreenshotMonitor = ({ settings }) => {
   // Handle voice data from the recorder - COMMENTED OUT
   // const handleVoiceData = useCallback((data) => {
   //   setVoiceData(prev => [...prev, data]);
-  //   console.log('Voice data accumulated:', data);
   // }, []);
 
   // Calculate image similarity using a simple pixel difference approach
@@ -64,20 +62,13 @@ const ScreenshotMonitor = ({ settings }) => {
   // Delete screenshot that is too similar
   const deleteSimilarScreenshot = useCallback(async (filepath) => {
     if (!window.electronAPI || !window.electronAPI.deleteScreenshot) {
-      console.warn('Delete screenshot functionality not available');
       return;
     }
 
     try {
       const result = await window.electronAPI.deleteScreenshot(filepath);
-      if (result.success) {
-        console.log(`✅ Deleted similar screenshot: ${filepath}`);
-        setDeletedCount(prev => prev + 1);
-      } else {
-        console.warn(`⚠️ Failed to delete screenshot: ${result.error}`);
-      }
     } catch (error) {
-      console.error('Error deleting screenshot:', error);
+      // Silent error handling
     }
   }, []);
 
@@ -87,7 +78,6 @@ const ScreenshotMonitor = ({ settings }) => {
 
     // Skip if another request is already in progress
     if (isRequestInProgress) {
-      console.log('Skipping screenshot - request already in progress');
       return;
     }
 
@@ -109,17 +99,13 @@ const ScreenshotMonitor = ({ settings }) => {
       // Convert audio blobs to base64 for sending with screenshot - COMMENTED OUT
       // if (accumulatedAudio.length > 0) {
       //   try {
-      //     console.log(`Converting ${accumulatedAudio.length} audio chunks to base64`);
-      //     
       //     for (const audioData of accumulatedAudio) {
       //       const arrayBuffer = await audioData.blob.arrayBuffer();
       //       const base64Data = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
       //       voiceFiles.push(base64Data);
       //     }
-      //     
-      //     console.log(`Successfully converted ${voiceFiles.length} audio chunks to base64`);
       //   } catch (audioError) {
-      //     console.error('Error converting audio to base64:', audioError);
+      //     // Silent error handling
       //   }
       // }
 
@@ -171,18 +157,13 @@ const ScreenshotMonitor = ({ settings }) => {
       setStatus('monitoring');
       setError(null);
 
-      console.log(`✅ Screenshot #${screenshotCount + 1} sent successfully to backend`);
-
       // Clear accumulated audio after successful send - COMMENTED OUT
       // if (voiceRecorderRef.current && typeof voiceRecorderRef.current.clearAccumulatedAudio === 'function') {
       //   voiceRecorderRef.current.clearAccumulatedAudio();
       // }
 
     } catch (err) {
-      if (err.name === 'AbortError') {
-        console.log('Screenshot request aborted');
-      } else {
-        console.error('Error sending screenshot:', err);
+      if (err.name !== 'AbortError') {
         setError(`Failed to send screenshot: ${err.message}`);
       }
     } finally {
@@ -208,7 +189,6 @@ const ScreenshotMonitor = ({ settings }) => {
 
     // Skip if already processing a screenshot or if a request is in progress
     if (isProcessingScreenshot || isRequestInProgress) {
-      console.log('Skipping screenshot - already processing or request in progress');
       return;
     }
 
@@ -233,12 +213,9 @@ const ScreenshotMonitor = ({ settings }) => {
 
       // If similarity check is disabled, send every screenshot
       if (skipSimilarityCheck) {
-        console.log('Similarity check disabled, sending screenshot');
         // Check again right before sending to prevent race condition
         if (!isRequestInProgress) {
           sendScreenshotToBackend(screenshotFile);
-        } else {
-          console.log('Request started while processing, skipping this screenshot');
         }
         setStatus('monitoring');
         return;
@@ -248,13 +225,11 @@ const ScreenshotMonitor = ({ settings }) => {
       const imageResult = await window.electronAPI.readImageAsBase64(result.filepath);
       
       if (!imageResult.success) {
-        console.warn('Failed to read image for similarity comparison, sending anyway:', imageResult.error);
         // If we can't read the image for comparison, just send it
         // Check again right before sending to prevent race condition
         if (!isRequestInProgress) {
           sendScreenshotToBackend(screenshotFile);
         } else {
-          console.log('Request started while processing, skipping this screenshot');
           // Delete the screenshot since it won't be sent
           deleteSimilarScreenshot(screenshotFile.path);
         }
@@ -267,7 +242,6 @@ const ScreenshotMonitor = ({ settings }) => {
       img.onload = () => {
         // CRITICAL: Check again here since this is async and may execute much later
         if (isRequestInProgress) {
-          console.log('Request started while processing similarity, skipping this screenshot');
           setStatus('monitoring');
           setIsProcessingScreenshot(false);
           return;
@@ -287,8 +261,6 @@ const ScreenshotMonitor = ({ settings }) => {
           similarity = calculateImageSimilarity(lastImageDataRef.current, currentImageData);
         }
 
-        console.log(`Screenshot similarity: ${similarity.toFixed(3)} (threshold: ${SIMILARITY_THRESHOLD}) - ${similarity < SIMILARITY_THRESHOLD ? 'DIFFERENT ENOUGH → will send' : 'TOO SIMILAR → will delete'}`);
-
         // Only send if different enough (below threshold)
         if (similarity < SIMILARITY_THRESHOLD) {
           // Final check right before sending
@@ -296,12 +268,10 @@ const ScreenshotMonitor = ({ settings }) => {
             sendScreenshotToBackend(screenshotFile);
             lastImageDataRef.current = currentImageData;
           } else {
-            console.log('Request started during similarity check, skipping this screenshot');
             // Delete the screenshot since it won't be sent
             deleteSimilarScreenshot(screenshotFile.path);
           }
         } else {
-          console.log(`Screenshot too similar (${similarity.toFixed(3)} >= ${SIMILARITY_THRESHOLD}), deleting file`);
           // Delete the screenshot since it's too similar
           deleteSimilarScreenshot(screenshotFile.path);
           setStatus('monitoring');
@@ -310,13 +280,11 @@ const ScreenshotMonitor = ({ settings }) => {
       };
 
       img.onerror = () => {
-        console.error('Failed to load screenshot for similarity comparison');
         // If image loading fails, just send the screenshot anyway
         // Check again right before sending to prevent race condition
         if (!isRequestInProgress) {
           sendScreenshotToBackend(screenshotFile);
         } else {
-          console.log('Request started while processing, skipping this screenshot');
           // Delete the screenshot since it won't be sent
           deleteSimilarScreenshot(screenshotFile.path);
         }
@@ -328,7 +296,6 @@ const ScreenshotMonitor = ({ settings }) => {
       img.src = imageResult.dataUrl;
 
     } catch (err) {
-      console.error('Error processing screenshot:', err);
       setError(`Error processing screenshot: ${err.message}`);
       setStatus('monitoring');
       setIsProcessingScreenshot(false);
@@ -348,7 +315,6 @@ const ScreenshotMonitor = ({ settings }) => {
     setStatus('monitoring');
     setError(null);
     setScreenshotCount(0);
-    setDeletedCount(0);
     lastImageDataRef.current = null;
 
     // Start the interval
@@ -386,7 +352,6 @@ const ScreenshotMonitor = ({ settings }) => {
     
     // Reset counters (optional - you might want to keep them for reference)
     // setScreenshotCount(0);
-    // setDeletedCount(0);
   }, [isMonitoring]);
 
   // Cleanup on unmount
@@ -453,10 +418,6 @@ const ScreenshotMonitor = ({ settings }) => {
         
         <div className="status-item">
           <span>📊 Screenshots sent: <strong>{screenshotCount}</strong></span>
-        </div>
-        
-        <div className="status-item">
-          <span>🗑️ Similar screenshots deleted: <strong>{deletedCount}</strong></span>
         </div>
         
         {lastProcessedTime && (

@@ -678,18 +678,18 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, isVisible })
           <h3>About</h3>
           <div className="about-info">
             <p><strong>MIRIX Desktop</strong></p>
-            <p>Version 1.0.0</p>
+            <p>Version 0.1.0</p>
             <p>AI Assistant powered by advanced language models</p>
             <div className="about-links">
               <button 
                 className="link-button"
-                onClick={() => window.open('https://github.com/your-repo/mirix', '_blank')}
+                onClick={() => window.open('https://docs.mirix.io', '_blank')}
               >
                 📖 Documentation
               </button>
               <button 
                 className="link-button"
-                onClick={() => window.open('https://github.com/your-repo/mirix/issues', '_blank')}
+                onClick={() => window.open('https://github.com/Mirix-AI/MIRIX/issues', '_blank')}
               >
                 🐛 Report Issue
               </button>
