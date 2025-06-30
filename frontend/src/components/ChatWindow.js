@@ -60,23 +60,213 @@ const ChatWindow = ({ settings, messages, setMessages }) => {
     loadScreenshotSetting();
   }, [settings.serverUrl]);
 
+  // Function to save image files to local directory
+  const saveImageToLocal = async (file) => {
+    // Check if we're in Electron environment and handlers are available
+    const isElectronWithHandlers = window.electronAPI && 
+      typeof window.electronAPI.saveImageToTmp === 'function' &&
+      typeof window.electronAPI.saveImageBufferToTmp === 'function';
+
+    if (!isElectronWithHandlers) {
+      // For web environment or Electron without handlers, handle files appropriately
+      console.log('Running in web mode or Electron handlers not ready, using web fallback');
+      
+      if (file.file) {
+        // For File objects in web environment, convert to base64 data URL
+        try {
+          const base64 = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = reject;
+            reader.readAsDataURL(file.file);
+          });
+          
+          return {
+            name: file.name,
+            path: file.name, // Keep original filename for backend reference
+            displayUrl: base64, // Use base64 data URL for display
+            type: file.type,
+            size: file.size,
+            isScreenshot: file.isScreenshot || false,
+            isBase64: true // Flag to indicate this is base64 data
+          };
+        } catch (error) {
+          console.error('Error converting file to base64:', error);
+          return {
+            name: file.name,
+            path: file.name,
+            type: file.type,
+            size: file.size,
+            isScreenshot: file.isScreenshot || false,
+            error: 'Failed to process file'
+          };
+        }
+      }
+      
+      // For other file types or screenshots, return as-is with safe fallback
+      return {
+        name: file.name,
+        path: file.path || file.name,
+        type: file.type,
+        size: file.size,
+        isScreenshot: file.isScreenshot || false,
+        ...(file.lastModified && { lastModified: file.lastModified })
+      };
+    }
+
+    // Electron environment with handlers available
+    try {
+      // Generate unique filename
+      const timestamp = Date.now();
+      const randomId = Math.random().toString(36).substr(2, 9);
+      const extension = file.name.split('.').pop() || 'png';
+      const uniqueFileName = `${timestamp}_${randomId}.${extension}`;
+      
+      // For screenshots, the file.path is already the full path
+      if (file.isScreenshot && file.path) {
+        const savedPath = await window.electronAPI.saveImageToTmp(file.path, uniqueFileName);
+        
+        // Also get base64 for display purposes (to avoid file:// security issues)
+        let displayUrl = null;
+        try {
+          if (window.electronAPI.readImageAsBase64) {
+            const base64Result = await window.electronAPI.readImageAsBase64(savedPath);
+            if (base64Result.success) {
+              displayUrl = base64Result.dataUrl;
+            }
+          }
+        } catch (error) {
+          console.warn('Could not read saved screenshot as base64:', error);
+        }
+        
+        return {
+          name: file.name,
+          path: savedPath, // File path for backend
+          displayUrl: displayUrl, // Base64 URL for display
+          type: file.type,
+          size: file.size,
+          isScreenshot: true,
+          originalPath: file.path
+        };
+      }
+      
+      // For regular uploaded files
+      if (file.file) {
+        // Convert File object to buffer for Electron
+        const arrayBuffer = await file.file.arrayBuffer();
+        const savedPath = await window.electronAPI.saveImageBufferToTmp(arrayBuffer, uniqueFileName);
+        
+        // Also get base64 for display purposes (to avoid file:// security issues)
+        let displayUrl = null;
+        try {
+          if (window.electronAPI.readImageAsBase64) {
+            const base64Result = await window.electronAPI.readImageAsBase64(savedPath);
+            if (base64Result.success) {
+              displayUrl = base64Result.dataUrl;
+            }
+          }
+        } catch (error) {
+          console.warn('Could not read saved image as base64:', error);
+        }
+        
+        // Fallback to base64 from original file if reading saved file fails
+        if (!displayUrl) {
+          try {
+            displayUrl = await new Promise((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(reader.result);
+              reader.onerror = reject;
+              reader.readAsDataURL(file.file);
+            });
+          } catch (error) {
+            console.warn('Could not create base64 from original file:', error);
+          }
+        }
+        
+        return {
+          name: file.name,
+          path: savedPath, // File path for backend
+          displayUrl: displayUrl, // Base64 URL for display
+          type: file.type,
+          size: file.size,
+          isScreenshot: false,
+          originalPath: file.path
+        };
+      }
+      
+      // For files with existing paths
+      if (file.path) {
+        const savedPath = await window.electronAPI.saveImageToTmp(file.path, uniqueFileName);
+        
+        // Also get base64 for display purposes (to avoid file:// security issues)
+        let displayUrl = null;
+        try {
+          if (window.electronAPI.readImageAsBase64) {
+            const base64Result = await window.electronAPI.readImageAsBase64(savedPath);
+            if (base64Result.success) {
+              displayUrl = base64Result.dataUrl;
+            }
+          }
+        } catch (error) {
+          console.warn('Could not read saved file as base64:', error);
+        }
+        
+        return {
+          name: file.name,
+          path: savedPath, // File path for backend
+          displayUrl: displayUrl, // Base64 URL for display
+          type: file.type,
+          size: file.size,
+          isScreenshot: file.isScreenshot || false,
+          originalPath: file.path
+        };
+      }
+      
+      return file;
+    } catch (error) {
+      console.error('Error saving image to local directory:', error);
+      // Fallback to web handling if Electron fails
+      if (file.file) {
+        try {
+          const base64 = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = reject;
+            reader.readAsDataURL(file.file);
+          });
+          
+          return {
+            name: file.name,
+            path: file.path || file.name,
+            displayUrl: base64, // Use base64 data URL for display
+            type: file.type,
+            size: file.size,
+            isScreenshot: file.isScreenshot || false,
+            isBase64: true,
+            originalPath: file.path
+          };
+        } catch (fallbackError) {
+          console.error('Fallback file processing also failed:', fallbackError);
+        }
+      }
+      
+      return file; // Final fallback to original file
+    }
+  };
+
   const sendMessage = async (messageText, imageFiles = []) => {
     if (!messageText.trim() && imageFiles.length === 0) return;
 
-    const sanitizedImages = imageFiles.map(file => ({
-      name: file.name,
-      path: file.path,
-      type: file.type,
-      size: file.size,
-      isScreenshot: file.isScreenshot || false,
-      ...(file.lastModified && { lastModified: file.lastModified })
-    }));
+    // Save images to local directory first
+    const savedImages = await Promise.all(
+      imageFiles.map(file => saveImageToLocal(file))
+    );
 
     const userMessage = {
       id: Date.now(),
       type: 'user',
       content: messageText,
-      images: sanitizedImages,
+      images: savedImages,
       timestamp: new Date().toISOString()
     };
 
@@ -95,15 +285,14 @@ const ChatWindow = ({ settings, messages, setMessages }) => {
     let cleanup = null;
     try {
       let imageUris = null;
-      if (imageFiles.length > 0) {
-        imageUris = imageFiles.map(file => {
-          if (file.isScreenshot) {
-            return file.path;
-          } else if (file.path) {
-            return file.path;
-          } else {
-            return file.name;
+      if (savedImages.length > 0) {
+        imageUris = savedImages.map(file => {
+          // For base64 data (web mode), send the displayUrl which contains base64 data
+          if (file.isBase64 && file.displayUrl) {
+            return file.displayUrl;
           }
+          // For file paths (Electron mode), send the file path for backend processing
+          return file.path;
         });
       }
 
@@ -402,6 +591,7 @@ const ChatWindow = ({ settings, messages, setMessages }) => {
 
         <MessageInput 
           onSendMessage={sendMessage}
+          disabled={hasActiveStreaming}
         />
 
       <ApiKeyModal

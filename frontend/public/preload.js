@@ -20,6 +20,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Delete screenshot function (for removing similar screenshots)
   deleteScreenshot: (filepath) => ipcRenderer.invoke('delete-screenshot', filepath),
   
+  // Image saving functions
+  saveImageToTmp: (sourcePath, filename) => ipcRenderer.invoke('save-image-to-tmp', sourcePath, filename),
+  saveImageBufferToTmp: (arrayBuffer, filename) => ipcRenderer.invoke('save-image-buffer-to-tmp', arrayBuffer, filename),
+  cleanupTmpImages: (maxAge) => ipcRenderer.invoke('cleanup-tmp-images', maxAge),
+  
   // Menu event listeners - wrap callbacks to prevent passing non-serializable event objects
   onMenuNewChat: (callback) => {
     const wrappedCallback = (event, ...args) => callback(...args);

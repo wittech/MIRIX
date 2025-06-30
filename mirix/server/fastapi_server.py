@@ -327,7 +327,7 @@ async def send_streaming_message_endpoint(request: MessageRequest):
             }
         )
     
-    # Create a queue to collect intermediate messages
+    # Create a queue to collect intermediate messagess
     message_queue = queue.Queue()
     
     def display_intermediate_message(message_type: str, message: str):

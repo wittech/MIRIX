@@ -59,27 +59,50 @@ const ChatBubble = ({ message }) => {
       
       {images && images.length > 0 && (
         <div className="message-images">
-          {images.map((image, index) => (
-            <div key={index} className="image-preview">
-              <img 
-                src={image.url || (image.path ? `file://${image.path}` : image.name)} 
-                alt={`Attachment ${index + 1}`}
-                onError={(e) => {
-                  // If file:// URL doesn't work, try without protocol for electron
-                  if (image.path && e.target.src.startsWith('file://')) {
-                    e.target.src = image.path;
-                  }
-                }}
-                onLoad={(e) => {
-                  // Revoke object URL after loading to prevent memory leaks
-                  if (image.url && image.url.startsWith('blob:')) {
-                    URL.revokeObjectURL(image.url);
-                  }
-                }}
-              />
-              <span className="image-name">{image.name}</span>
-            </div>
-          ))}
+          {images.map((image, index) => {
+            // Determine the correct image source
+            let imageSrc;
+            if (image.displayUrl) {
+              // Use displayUrl if available (base64 data URL for secure display)
+              imageSrc = image.displayUrl;
+            } else if (image.url) {
+              // Use existing URL (blob URLs, etc.)
+              imageSrc = image.url;
+            } else if (image.path) {
+              // Check if path is a base64 data URL
+              if (image.path.startsWith('data:')) {
+                imageSrc = image.path; // Use base64 data URL directly
+              } else {
+                // For file paths, use file:// protocol (though this may be blocked)
+                imageSrc = `file://${image.path}`;
+              }
+            } else {
+              // Fallback to name
+              imageSrc = image.name;
+            }
+
+            return (
+              <div key={index} className="image-preview">
+                <img 
+                  src={imageSrc}
+                  alt={`Attachment ${index + 1}`}
+                  onError={(e) => {
+                    // If file:// URL doesn't work, try without protocol for electron
+                    if (image.path && e.target.src.startsWith('file://') && !image.path.startsWith('data:')) {
+                      e.target.src = image.path;
+                    }
+                  }}
+                  onLoad={(e) => {
+                    // Revoke object URL after loading to prevent memory leaks
+                    if (image.url && image.url.startsWith('blob:')) {
+                      URL.revokeObjectURL(image.url);
+                    }
+                  }}
+                />
+                <span className="image-name">{image.name}</span>
+              </div>
+            );
+          })}
         </div>
       )}
       

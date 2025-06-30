@@ -45,6 +45,51 @@ from mirix.prompts import gpt_system
 from mirix.schemas.memory import ChatMemory
 from mirix.settings import model_settings
 
+def encode_image(image_path):
+    with open(image_path, "rb") as img_file:
+        return base64.b64encode(img_file.read()).decode("utf-8")
+
+def get_image_mime_type(image_path):
+    """
+    Detect the MIME type of an image file.
+    
+    Args:
+        image_path: Path to the image file
+        
+    Returns:
+        str: MIME type (e.g., 'image/jpeg', 'image/png', etc.)
+    """
+    try:
+        # Use PIL to detect the image format
+        with Image.open(image_path) as img:
+            format_lower = img.format.lower() if img.format else None
+            
+            # Map PIL formats to MIME types
+            format_to_mime = {
+                'jpeg': 'image/jpeg',
+                'jpg': 'image/jpeg', 
+                'png': 'image/png',
+                'gif': 'image/gif',
+                'bmp': 'image/bmp',
+                'webp': 'image/webp',
+                'tiff': 'image/tiff',
+                'tif': 'image/tiff',
+                'ico': 'image/x-icon',
+                'svg': 'image/svg+xml'
+            }
+            
+            return format_to_mime.get(format_lower, 'image/jpeg')  # Default to jpeg if unknown
+            
+    except Exception as e:
+        # If PIL fails, try using mimetypes module as fallback
+        import mimetypes
+        mime_type, _ = mimetypes.guess_type(image_path)
+        if mime_type and mime_type.startswith('image/'):
+            return mime_type
+        
+        # Final fallback to jpeg
+        return 'image/jpeg'
+
 class AgentWrapper():
     
     def __init__(self, agent_config_file, load_from=None):
@@ -760,6 +805,13 @@ class AgentWrapper():
                 self.clear_old_screenshots()
 
         else:
+
+            if image_uris is not None:
+                if isinstance(message, str):
+                    message = [{'type': 'text', 'text': message}]
+                for image_uri in image_uris:
+                    mime_type = get_image_mime_type(image_uri)
+                    message.append({'type': 'image_data', 'image_data': {'data': f"data:{mime_type};base64,{encode_image(image_uri)}", 'detail': 'auto'}})
 
             # Only get recent images for chat context if user has enabled this feature
             if self.include_recent_screenshots:

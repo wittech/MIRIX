@@ -292,12 +292,62 @@ app.whenReady().then(async () => {
   });
 });
 
+// Helper function to cleanup old tmp images
+async function cleanupOldTmpImages(maxAge = 7 * 24 * 60 * 60 * 1000) {
+  try {
+    const imagesDir = ensureScreenshotDirectory();
+    const files = fs.readdirSync(imagesDir);
+    const now = Date.now();
+    let deletedCount = 0;
+
+    for (const file of files) {
+      // Clean up any image files older than maxAge, but skip screenshot files
+      if (!file.startsWith('screenshot-') && 
+          (file.endsWith('.png') || file.endsWith('.jpg') || file.endsWith('.jpeg') || 
+           file.endsWith('.gif') || file.endsWith('.bmp') || file.endsWith('.webp'))) {
+        const filepath = path.join(imagesDir, file);
+        const stats = fs.statSync(filepath);
+        const age = now - stats.mtime.getTime();
+        
+        if (age > maxAge) {
+          fs.unlinkSync(filepath);
+          deletedCount++;
+        }
+      }
+    }
+
+    return {
+      success: true,
+      deletedCount: deletedCount
+    };
+  } catch (error) {
+    safeLog.error('Failed to cleanup tmp images:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}
+
 // Start backend in background
 function startBackendInBackground() {
   safeLog.log('Starting backend server in background...');
   
   startBackendServer().then(() => {
     safeLog.log('Backend initialization complete');
+    
+    // Cleanup old tmp images on startup
+    setTimeout(async () => {
+      try {
+        const result = await cleanupOldTmpImages();
+        if (result.success && result.deletedCount > 0) {
+          safeLog.log(`Cleaned up ${result.deletedCount} old tmp images on startup`);
+        }
+      } catch (error) {
+        safeLog.error('Failed to cleanup tmp images on startup:', error);
+      }
+    }, 5000); // Wait 5 seconds after backend starts
+    
   }).catch((error) => {
     safeLog.error('Backend initialization failed:', error);
     
@@ -544,6 +594,89 @@ ipcMain.handle('delete-screenshot', async (event, filepath) => {
     };
   } catch (error) {
     safeLog.error('Failed to delete screenshot:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+});
+
+// IPC handler for saving image files to tmp directory
+ipcMain.handle('save-image-to-tmp', async (event, sourcePath, filename) => {
+  try {
+    const imagesDir = ensureScreenshotDirectory();
+    const targetPath = path.join(imagesDir, filename);
+
+    // Check if source file exists
+    if (!fs.existsSync(sourcePath)) {
+      throw new Error(`Source file does not exist: ${sourcePath}`);
+    }
+
+    // Copy the file to the tmp directory
+    fs.copyFileSync(sourcePath, targetPath);
+    
+    safeLog.log(`Image saved to tmp directory: ${targetPath}`);
+
+    return targetPath;
+  } catch (error) {
+    safeLog.error('Failed to save image to tmp directory:', error);
+    throw error;
+  }
+});
+
+// IPC handler for saving image buffer to tmp directory
+ipcMain.handle('save-image-buffer-to-tmp', async (event, arrayBuffer, filename) => {
+  try {
+    const imagesDir = ensureScreenshotDirectory();
+    const targetPath = path.join(imagesDir, filename);
+
+    // Convert ArrayBuffer to Buffer
+    const buffer = Buffer.from(arrayBuffer);
+    
+    // Write the buffer to file
+    fs.writeFileSync(targetPath, buffer);
+    
+    safeLog.log(`Image buffer saved to tmp directory: ${targetPath}`);
+
+    return targetPath;
+  } catch (error) {
+    safeLog.error('Failed to save image buffer to tmp directory:', error);
+    throw error;
+  }
+});
+
+// IPC handler for cleaning up old tmp images
+ipcMain.handle('cleanup-tmp-images', async (event, maxAge = 7 * 24 * 60 * 60 * 1000) => {
+  try {
+    const imagesDir = ensureScreenshotDirectory();
+    const files = fs.readdirSync(imagesDir);
+    const now = Date.now();
+    let deletedCount = 0;
+
+    for (const file of files) {
+      // Clean up any image files older than maxAge, but skip screenshot files
+      if (!file.startsWith('screenshot-') && 
+          (file.endsWith('.png') || file.endsWith('.jpg') || file.endsWith('.jpeg') || 
+           file.endsWith('.gif') || file.endsWith('.bmp') || file.endsWith('.webp'))) {
+        const filepath = path.join(imagesDir, file);
+        const stats = fs.statSync(filepath);
+        const age = now - stats.mtime.getTime();
+        
+        if (age > maxAge) {
+          fs.unlinkSync(filepath);
+          deletedCount++;
+        }
+      }
+    }
+
+    safeLog.log(`Cleaned up ${deletedCount} old tmp images`);
+
+    return {
+      success: true,
+      deletedCount: deletedCount
+    };
+  } catch (error) {
+    safeLog.error('Failed to cleanup tmp images:', error);
     return {
       success: false,
       error: error.message
