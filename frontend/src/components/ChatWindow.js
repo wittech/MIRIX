@@ -8,6 +8,7 @@ import './ChatWindow.css';
 
 const ChatWindow = ({ settings, messages, setMessages }) => {
   const [includeScreenshots, setIncludeScreenshots] = useState(true);
+  const [currentModel, setCurrentModel] = useState(settings.model); // Track actual current model
   const [showApiKeyModal, setShowApiKeyModal] = useState(false);
   const [missingApiKeys, setMissingApiKeys] = useState([]);
   const [currentModelType, setCurrentModelType] = useState('');
@@ -59,6 +60,25 @@ const ChatWindow = ({ settings, messages, setMessages }) => {
     
     loadScreenshotSetting();
   }, [settings.serverUrl]);
+
+  // Load current model
+  useEffect(() => {
+    const loadCurrentModel = async () => {
+      try {
+        const response = await queuedFetch(`${settings.serverUrl}/models/current`);
+        if (response.ok) {
+          const data = await response.json();
+          setCurrentModel(data.current_model);
+        }
+      } catch (error) {
+        console.error('Error loading current model:', error);
+        // Fallback to settings.model if API call fails
+        setCurrentModel(settings.model);
+      }
+    };
+    
+    loadCurrentModel();
+  }, [settings.serverUrl, settings.model]);
 
   // Function to save image files to local directory
   const saveImageToLocal = async (file) => {
@@ -527,7 +547,7 @@ const ChatWindow = ({ settings, messages, setMessages }) => {
     <div className="chat-window">
       <div className="chat-header">
         <div className="chat-info">
-          <span className="model-info">Model: {settings.model}</span>
+          <span className="model-info">Model: {currentModel}</span>
           <span className="persona-info">Persona: {settings.persona}</span>
         </div>
         <div className="chat-actions">

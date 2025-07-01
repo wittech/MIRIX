@@ -232,7 +232,7 @@ const ApiKeyModal = ({ isOpen, onClose, missingKeys, modelType, onSubmit, server
 
         <div className="api-key-note">
           <p>
-            <strong>Note:</strong> Your API keys will be saved securely to your .env file for permanent storage and will persist across sessions.
+            <strong>Note:</strong> Your API keys will be saved securely to your local database for permanent storage and will persist across sessions.
           </p>
         </div>
       </div>

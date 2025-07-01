@@ -17,6 +17,7 @@ from mirix.schemas.message import Message as PydanticMessage
 from mirix.schemas.openai.chat_completion_request import Tool
 from mirix.schemas.openai.chat_completion_response import ChatCompletionResponse, Choice, FunctionCall, Message, ToolCall, UsageStatistics
 from mirix.settings import model_settings
+from mirix.services.provider_manager import ProviderManager
 from mirix.utils import get_tool_call_id
 
 logger = get_logger(__name__)
@@ -30,10 +31,14 @@ class GoogleAIClient(LLMClientBase):
         """
         # print("[google_ai request]", json.dumps(request_data, indent=2))
 
+        # Check for database-stored API key first, fall back to model_settings
+        override_key = ProviderManager().get_gemini_override_key()
+        api_key = str(override_key) if override_key else str(model_settings.gemini_api_key)
+
         url, headers = get_gemini_endpoint_and_headers(
             base_url=str(self.llm_config.model_endpoint),
             model=self.llm_config.model,
-            api_key=str(model_settings.gemini_api_key),
+            api_key=api_key,
             key_in_header=True,
             generate_content=True,
         )

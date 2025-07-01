@@ -363,6 +363,8 @@ class AgentWrapper():
         """
         load_dotenv()
         gemini_api_key = os.getenv("GEMINI_API_KEY")
+        gemini_override_key = self.client.server.provider_manager.get_gemini_override_key()
+        gemini_api_key = gemini_override_key or gemini_api_key
         
         if not gemini_api_key:
             self.logger.info("Info: GEMINI_API_KEY not found. Gemini features will be available after API key is provided.")
@@ -924,7 +926,11 @@ class AgentWrapper():
             status['model_requirements']['current_model'] = self.model_name
             status['model_requirements']['required_keys'] = ['GEMINI_API_KEY']
             
-            if not self.is_gemini_client_initialized() or not model_settings.gemini_api_key:
+            # Check database first for API key, then model_settings
+            gemini_override_key = self.client.server.provider_manager.get_gemini_override_key()
+            has_gemini_key = gemini_override_key or model_settings.gemini_api_key
+            
+            if not self.is_gemini_client_initialized() or not has_gemini_key:
                 if 'GEMINI_API_KEY' not in status['missing_keys']:
                     status['missing_keys'].append('GEMINI_API_KEY')
             else:
@@ -934,7 +940,11 @@ class AgentWrapper():
             status['model_requirements']['current_model'] = self.model_name
             status['model_requirements']['required_keys'] = ['OPENAI_API_KEY']
             
-            if not model_settings.openai_api_key:
+            # Check database first for API key, then model_settings
+            openai_override_key = self.client.server.provider_manager.get_openai_override_key()
+            has_openai_key = openai_override_key or model_settings.openai_api_key
+            
+            if not has_openai_key:
                 if 'OPENAI_API_KEY' not in status['missing_keys']:
                     status['missing_keys'].append('OPENAI_API_KEY')
             else:
@@ -944,7 +954,10 @@ class AgentWrapper():
             status['model_requirements']['current_model'] = self.model_name
             status['model_requirements']['required_keys'] = ['ANTHROPIC_API_KEY']
             
-            if not model_settings.anthropic_api_key:
+            claude_override_key = self.client.server.provider_manager.get_anthropic_override_key()
+            has_claude_key = claude_override_key or model_settings.anthropic_api_key
+
+            if not has_claude_key:
                 if 'ANTHROPIC_API_KEY' not in status['missing_keys']:
                     status['missing_keys'].append('ANTHROPIC_API_KEY')
             else:
@@ -958,30 +971,29 @@ class AgentWrapper():
     def provide_api_key(self, key_name: str, api_key: str) -> dict:
         """
         Provide an API key for a specific service.
-        Saves the key to .env file for persistence across sessions.
+        Saves the key to database for persistence across sessions.
         Returns a dictionary with success status and any error messages.
         """
+
         result = {'success': False, 'message': ''}
-        
-        # Save to .env file first for all key types
-        try:
-            self._save_api_key_to_env_file(key_name, api_key)
-            
-            # Reload the global model_settings to pick up the new API key
-            model_settings.__init__()
-            
-            # Update the environment variable for this session
-            os.environ[key_name] = api_key
-            
-            result['success'] = True
-            result['message'] = f'{key_name} successfully configured and saved to .env file!'
-            
-        except Exception as e:
-            result['message'] = f'Failed to save {key_name}: {str(e)}'
-            return result
         
         # Handle specific initialization for different services
         if key_name == 'GEMINI_API_KEY':
+            # Save to database using provider_manager
+            try:
+                # Create or update the Google AI provider in the database
+                self.client.server.provider_manager.insert_provider(
+                    name="google_ai",
+                    api_key=api_key,
+                    organization_id=self.client.user.organization_id,
+                    actor=self.client.user
+                )
+                result['success'] = True
+                result['message'] = 'Gemini API key successfully saved to database!'
+            except Exception as e:
+                result['message'] = f'Failed to save Gemini API key to database: {str(e)}'
+                return result
+                
             if self.model_name not in GEMINI_MODELS:
                 result['message'] = f"Gemini API key saved but not needed for current model: {self.model_name}"
                 return result
@@ -997,75 +1009,62 @@ class AgentWrapper():
                     if 'GEMINI_API_KEY' in self.missing_api_keys:
                         self.missing_api_keys.remove('GEMINI_API_KEY')
                     
-                    result['message'] = 'Gemini API key successfully configured and Gemini client initialized!'
+                    result['message'] = 'Gemini API key successfully saved to database and Gemini client initialized!'
                 else:
-                    result['message'] = 'Gemini API key saved but failed to complete initialization'
+                    result['message'] = 'Gemini API key saved to database but failed to complete initialization'
                     
             except Exception as e:
-                result['message'] = f'Gemini API key saved but validation failed: {str(e)}'
+                result['message'] = f'Gemini API key saved to database but validation failed: {str(e)}'
                 self.google_client = None
                 
         elif key_name == 'OPENAI_API_KEY':
-            # For OpenAI, the key will be picked up automatically by the client
-            # when model_settings is reloaded and used in the next request
+            # Save to database using provider_manager
+            try:
+                # Create or update the OpenAI provider in the database
+                self.client.server.provider_manager.insert_provider(
+                    name="openai",
+                    api_key=api_key,
+                    organization_id=self.client.user.organization_id,
+                    actor=self.client.user
+                )
+                result['success'] = True
+                result['message'] = 'OpenAI API key successfully saved to database!'
+            except Exception as e:
+                result['message'] = f'Failed to save OpenAI API key to database: {str(e)}'
+                return result
+
+            # Remove from missing keys list
             if 'OPENAI_API_KEY' in self.missing_api_keys:
                 self.missing_api_keys.remove('OPENAI_API_KEY')
-            result['message'] = 'OpenAI API key successfully configured!'
             
         elif key_name == 'ANTHROPIC_API_KEY':
-            # For Anthropic, the key will be picked up automatically by the client
-            # when model_settings is reloaded and used in the next request
+            # Save to database using provider_manager
+            try:
+                # Create or update the Anthropic provider in the database
+                self.client.server.provider_manager.insert_provider(
+                    name="anthropic",
+                    api_key=api_key,
+                    organization_id=self.client.user.organization_id,
+                    actor=self.client.user
+                )
+                result['success'] = True
+                result['message'] = 'Anthropic API key successfully saved to database!'
+            except Exception as e:
+                result['message'] = f'Failed to save Anthropic API key to database: {str(e)}'
+                return result
+            
+            # Remove from missing keys list
             if 'ANTHROPIC_API_KEY' in self.missing_api_keys:
                 self.missing_api_keys.remove('ANTHROPIC_API_KEY')
-            result['message'] = 'Anthropic API key successfully configured!'
             
         else:
-            # For any other API key, just confirm it was saved
+            # For any other API key, just confirm it was provided
+            result['success'] = True
             result['message'] = f'{key_name} successfully configured!'
             
         return result
     
-    def _save_api_key_to_env_file(self, key_name: str, api_key: str):
-        """
-        Save an API key to the .env file for persistence across sessions.
-        """
-        from pathlib import Path
-        
-        # Find the .env file (look in current directory and parent directories)
-        env_file_path = None
-        current_path = Path.cwd()
-        
-        # Check current directory and up to 3 parent directories
-        for _ in range(4):
-            potential_env_path = current_path / '.env'
-            if potential_env_path.exists():
-                env_file_path = potential_env_path
-                break
-            current_path = current_path.parent
-        
-        # If no .env file found, create one in the current working directory
-        if env_file_path is None:
-            env_file_path = Path.cwd() / '.env'
-        
-        # Read existing .env file content
-        env_content = {}
-        if env_file_path.exists():
-            with open(env_file_path, 'r') as f:
-                for line in f:
-                    line = line.strip()
-                    if line and not line.startswith('#') and '=' in line:
-                        key, value = line.split('=', 1)
-                        env_content[key.strip()] = value.strip()
-        
-        # Update the API key
-        env_content[key_name] = api_key
-        
-        # Write back to .env file
-        with open(env_file_path, 'w') as f:
-            for key, value in env_content.items():
-                f.write(f"{key}={value}\n")
-        
-        self.logger.info(f"API key {key_name} saved to {env_file_path}")
+
 
     def _complete_gemini_initialization(self) -> bool:
         """Complete Gemini initialization after API key is provided."""

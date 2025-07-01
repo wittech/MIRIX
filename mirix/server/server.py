@@ -68,6 +68,7 @@ from mirix.services.semantic_memory_manager import SemanticMemoryManager
 from mirix.services.per_agent_lock_manager import PerAgentLockManager
 from mirix.services.cloud_file_mapping_manager import CloudFileMappingManager
 from mirix.services.sandbox_config_manager import SandboxConfigManager
+from mirix.services.provider_manager import ProviderManager
 from mirix.services.step_manager import StepManager
 from mirix.services.tool_execution_sandbox import ToolExecutionSandbox
 from mirix.services.tool_manager import ToolManager
@@ -297,6 +298,9 @@ class SyncServer(Server):
         self.resource_memory_manager = ResourceMemoryManager()
         self.semantic_memory_manager = SemanticMemoryManager()
 
+        # API Key Manager
+        self.provider_manager = ProviderManager()
+
         # CloudFileManager
         self.cloud_file_mapping_manager = CloudFileMappingManager()
 
@@ -323,10 +327,15 @@ class SyncServer(Server):
 
         # collect providers (always has Mirix as a default)
         self._enabled_providers: List[Provider] = [MirixProvider()]
-        if model_settings.openai_api_key:
+        
+        # Check for database-stored API key first, fall back to model_settings
+        openai_override_key = ProviderManager().get_openai_override_key()
+        openai_api_key = openai_override_key if openai_override_key else model_settings.openai_api_key
+        
+        if openai_api_key:
             self._enabled_providers.append(
                 OpenAIProvider(
-                    api_key=model_settings.openai_api_key,
+                    api_key=openai_api_key,
                     base_url=model_settings.openai_api_base,
                 )
             )
@@ -344,10 +353,14 @@ class SyncServer(Server):
                     default_prompt_formatter=model_settings.default_prompt_formatter,
                 )
             )
-        if model_settings.gemini_api_key:
+        # Check for database-stored API key first, fall back to model_settings
+        gemini_override_key = ProviderManager().get_gemini_override_key()
+        gemini_api_key = gemini_override_key if gemini_override_key else model_settings.gemini_api_key
+        
+        if gemini_api_key:
             self._enabled_providers.append(
                 GoogleAIProvider(
-                    api_key=model_settings.gemini_api_key,
+                    api_key=gemini_api_key,
                 )
             )
         if model_settings.azure_api_key and model_settings.azure_base_url:

@@ -32,16 +32,16 @@ const backendPort = 8000; // Fixed backend port
 
 // Create screenshots directory
 function ensureScreenshotDirectory() {
-  const mirixDir = path.join(os.homedir(), '.mirix');
-  const tmpDir = path.join(mirixDir, 'tmp');
+    const mirixDir = path.join(os.homedir(), '.mirix');
+    const tmpDir = path.join(mirixDir, 'tmp');
   const imagesDir = path.join(tmpDir, 'images');
-  
-  if (!fs.existsSync(mirixDir)) {
-    fs.mkdirSync(mirixDir, { recursive: true });
-  }
-  if (!fs.existsSync(tmpDir)) {
-    fs.mkdirSync(tmpDir, { recursive: true });
-  }
+    
+    if (!fs.existsSync(mirixDir)) {
+      fs.mkdirSync(mirixDir, { recursive: true });
+    }
+    if (!fs.existsSync(tmpDir)) {
+      fs.mkdirSync(tmpDir, { recursive: true });
+    }
   if (!fs.existsSync(imagesDir)) {
     fs.mkdirSync(imagesDir, { recursive: true });
   }
