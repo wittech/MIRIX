@@ -16,6 +16,8 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, isVisible })
   const [timezoneUpdateMessage, setTimezoneUpdateMessage] = useState('');
   const [isCheckingApiKeys, setIsCheckingApiKeys] = useState(false);
   const [apiKeyMessage, setApiKeyMessage] = useState('');
+  const [isEditingPersona, setIsEditingPersona] = useState(false);
+  const [selectedTemplateInEdit, setSelectedTemplateInEdit] = useState('');
 
   // Debug logging for settings
   useEffect(() => {
@@ -109,6 +111,27 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, isVisible })
     }
   }, [settings.serverUrl, settings.memoryModel, onSettingsChange]);
 
+  const fetchCurrentTimezone = useCallback(async () => {
+    if (!settings.serverUrl) {
+      console.log('fetchCurrentTimezone: serverUrl not available yet');
+      return;
+    }
+    try {
+      const response = await queuedFetch(`${settings.serverUrl}/timezone/current`);
+      if (response.ok) {
+        const data = await response.json();
+        // Only update if the timezone is different from current settings
+        if (data.timezone !== settings.timezone) {
+          onSettingsChange({ timezone: data.timezone });
+        }
+      } else {
+        console.error('Failed to fetch current timezone');
+      }
+    } catch (error) {
+      console.error('Error fetching current timezone:', error);
+    }
+  }, [settings.serverUrl, settings.timezone, onSettingsChange]);
+
   const applyPersonaTemplate = useCallback(async (personaName) => {
     if (!settings.serverUrl) {
       console.log('applyPersonaTemplate: serverUrl not available yet');
@@ -145,17 +168,19 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, isVisible })
       fetchCoreMemoryPersona();
       fetchCurrentModel();
       fetchCurrentMemoryModel();
+      fetchCurrentTimezone();
     }
-  }, [settings.serverUrl, fetchPersonaDetails, fetchCoreMemoryPersona, fetchCurrentModel, fetchCurrentMemoryModel]);
+  }, [settings.serverUrl, fetchPersonaDetails, fetchCoreMemoryPersona, fetchCurrentModel, fetchCurrentMemoryModel, fetchCurrentTimezone]);
 
-  // Fetch current models whenever settings panel becomes visible
+  // Fetch current models and timezone whenever settings panel becomes visible
   useEffect(() => {
     if (isVisible && settings.serverUrl) {
-      console.log('SettingsPanel: became visible, refreshing current models');
+      console.log('SettingsPanel: became visible, refreshing current models and timezone');
       fetchCurrentModel();
       fetchCurrentMemoryModel();
+      fetchCurrentTimezone();
     }
-  }, [isVisible, settings.serverUrl, fetchCurrentModel, fetchCurrentMemoryModel]);
+  }, [isVisible, settings.serverUrl, fetchCurrentModel, fetchCurrentMemoryModel, fetchCurrentTimezone]);
 
   // Apply persona template only on initial load when we have both persona data and no text loaded yet
   useEffect(() => {
@@ -175,6 +200,7 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, isVisible })
       return;
     }
     
+    // Only update the settings, don't apply template to backend yet
     handleInputChange('persona', newPersona);
     
     // Apply the template regardless of whether personaDetails is loaded
@@ -214,6 +240,53 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, isVisible })
       setIsApplyingTemplate(false);
       // Clear message after 2 seconds
       setTimeout(() => setUpdateMessage(''), 2000);
+    }
+  };
+
+    const handlePersonaTemplateChange = async (newPersona) => {
+    console.log('handlePersonaTemplateChange called with:', newPersona);
+    
+    // Only update the edit-mode template selection (don't update main settings)
+    setSelectedTemplateInEdit(newPersona);
+    
+    // Load the template text without updating backend
+    if (personaDetails[newPersona]) {
+      // Use cached persona details
+      setSelectedPersonaText(personaDetails[newPersona]);
+      setUpdateMessage('📝 Template loaded - click Save to apply');
+      setTimeout(() => setUpdateMessage(''), 3000);
+    } else {
+      // Fallback: refresh persona details if not found
+      setIsApplyingTemplate(true);
+      setUpdateMessage('Loading template...');
+      
+      try {
+        if (!settings.serverUrl) {
+          setUpdateMessage('❌ Server not available');
+          return;
+        }
+        
+        const response = await queuedFetch(`${settings.serverUrl}/personas`);
+        if (response.ok) {
+          const data = await response.json();
+          setPersonaDetails(data.personas);
+          
+          if (data.personas[newPersona]) {
+            setSelectedPersonaText(data.personas[newPersona]);
+            setUpdateMessage('📝 Template loaded - click Save to apply');
+          } else {
+            setUpdateMessage('❌ Template not found');
+          }
+        } else {
+          setUpdateMessage('❌ Failed to load templates');
+        }
+      } catch (error) {
+        console.error('Error loading persona template:', error);
+        setUpdateMessage('❌ Error loading template');
+      } finally {
+        setIsApplyingTemplate(false);
+        setTimeout(() => setUpdateMessage(''), 3000);
+      }
     }
   };
 
@@ -423,6 +496,11 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, isVisible })
 
       if (response.ok) {
         setUpdateMessage('✅ Core memory persona updated successfully!');
+        // Update the main settings with the selected template
+        if (selectedTemplateInEdit) {
+          handleInputChange('persona', selectedTemplateInEdit);
+        }
+        // Stay in edit mode - don't close automatically
       } else {
         const errorData = await response.text();
         console.error('Failed to update core memory persona:', errorData);
@@ -564,54 +642,96 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, isVisible })
             )}
           </div>
 
-          <div className="setting-item">
-            <label htmlFor="persona-select">Persona</label>
-            <select
-              id="persona-select"
-              value={settings.persona}
-              onChange={(e) => handlePersonaChange(e.target.value)}
-              className="setting-select"
-              disabled={isApplyingTemplate}
-            >
-              {personas.map(persona => (
-                <option key={persona.value} value={persona.value}>
-                  {persona.label}
-                </option>
-              ))}
-            </select>
+          {/* Persona Display/Editor */}
+          <div className="setting-item persona-container">
+            <label>Persona</label>
+            
+            {!isEditingPersona ? (
+              /* Display Mode */
+              <div className="persona-display-mode">
+                <div className="persona-display-text">
+                  {selectedPersonaText || 'Loading persona...'}
+                </div>
+                <button
+                  onClick={() => {
+                    setIsEditingPersona(true);
+                    setSelectedTemplateInEdit(settings.persona); // Initialize with current persona
+                  }}
+                  className="edit-persona-btn"
+                  disabled={isApplyingTemplate}
+                >
+                  ✏️ Edit
+                </button>
+              </div>
+            ) : (
+              /* Edit Mode */
+              <div className="persona-edit-mode">
+                <div className="persona-template-selector">
+                  <label htmlFor="persona-select">Apply Template</label>
+                  <select
+                    id="persona-select"
+                    value={selectedTemplateInEdit}
+                    onChange={(e) => handlePersonaTemplateChange(e.target.value)}
+                    className="setting-select"
+                    disabled={isApplyingTemplate}
+                  >
+                    {personas.map(persona => (
+                      <option key={persona.value} value={persona.value}>
+                        {persona.label}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="setting-description">
+                    {isApplyingTemplate ? 'Loading template...' : 'Choose a template to load into the editor'}
+                  </span>
+                </div>
+                
+                <div className="persona-text-editor">
+                  <label htmlFor="persona-text">Edit Persona Text</label>
+                  <textarea
+                    id="persona-text"
+                    value={selectedPersonaText}
+                    onChange={handlePersonaTextChange}
+                    className="persona-textarea"
+                    placeholder="Enter your custom persona..."
+                    rows={6}
+                    disabled={isApplyingTemplate}
+                  />
+                </div>
+                
+                <div className="persona-edit-actions">
+                  <button
+                    onClick={updatePersonaText}
+                    disabled={isUpdatingPersona || isApplyingTemplate}
+                    className="save-persona-btn"
+                  >
+                    {isUpdatingPersona ? 'Saving...' : '💾 Save'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setIsEditingPersona(false);
+                      setSelectedTemplateInEdit('');
+                      setUpdateMessage('');
+                    }}
+                    className="cancel-persona-btn"
+                    disabled={isUpdatingPersona || isApplyingTemplate}
+                  >
+                    Cancel
+                  </button>
+                  {updateMessage && (
+                    <span className={`update-message ${updateMessage.includes('✅') ? 'success' : updateMessage.includes('Applying') || updateMessage.includes('Updating') ? 'info' : 'error'}`}>
+                      {updateMessage}
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+            
             <span className="setting-description">
-              {isApplyingTemplate ? 'Applying persona template...' : 'Set the personality style of the assistant'}
-            </span>
-          </div>
-
-          {/* Persona Text Editor */}
-          <div className="setting-item persona-editor">
-            <label htmlFor="persona-text">Agent's Active Persona (Core Memory)</label>
-            <textarea
-              id="persona-text"
-              value={selectedPersonaText}
-              onChange={handlePersonaTextChange}
-              className="persona-textarea"
-              placeholder="This shows the agent's current active persona from core memory..."
-              rows={6}
-              disabled={isApplyingTemplate}
-            />
-            <div className="persona-editor-actions">
-              <button
-                onClick={updatePersonaText}
-                disabled={isUpdatingPersona || isApplyingTemplate}
-                className="update-persona-btn"
-              >
-                {isUpdatingPersona ? 'Updating...' : 'Update Core Memory'}
-              </button>
-              {updateMessage && (
-                <span className={`update-message ${updateMessage.includes('✅') ? 'success' : updateMessage.includes('Applying') ? 'info' : 'error'}`}>
-                  {updateMessage}
-                </span>
-              )}
-            </div>
-            <span className="setting-description">
-              This shows the agent's current active persona from core memory. Select a persona from the dropdown above to apply a template, then edit and save custom changes here.
+              {isEditingPersona 
+                ? 'Apply a template or customize the persona text to define how the assistant behaves.'
+                : 'This shows the agent\'s current active persona. Click Edit to modify it.'
+              }
             </span>
           </div>
         </div>

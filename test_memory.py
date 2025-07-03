@@ -12,7 +12,6 @@ Features:
    - bm25: Full-text search using database capabilities
    - embedding: Vector similarity search using embeddings
    - string_match: Simple string containment search
-   - fuzzy_match: Fuzzy string matching using RapidFuzz
 4. Lists all content currently stored in each memory type
 5. Tests different search fields for each memory type
 6. Tests text-only memorization using both normal and immediate save methods:

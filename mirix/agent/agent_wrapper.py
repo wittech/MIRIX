@@ -36,7 +36,7 @@ from mirix.agent.temporary_message_accumulator import TemporaryMessageAccumulato
 from mirix.agent.upload_manager import UploadManager
 from mirix.agent.agent_states import AgentStates
 from mirix.agent.agent_configs import AGENT_CONFIGS
-from mirix.agent.app_constants import TEMPORARY_MESSAGE_LIMIT, MAXIMUM_NUM_IMAGES_IN_CLOUD, GEMINI_MODELS, OPENAI_MODELS
+from mirix.agent.app_constants import TEMPORARY_MESSAGE_LIMIT, MAXIMUM_NUM_IMAGES_IN_CLOUD, GEMINI_MODELS, OPENAI_MODELS, WITH_REFLEXION_AGENT, WITH_BACKGROUND_AGENT
 
 from mirix import create_client
 from mirix import LLMConfig, EmbeddingConfig
@@ -140,6 +140,8 @@ class AgentWrapper():
                     self.agent_states.core_memory_agent_state = agent_state
                 elif agent_state.name == 'resource_memory_agent':
                     self.agent_states.resource_memory_agent_state = agent_state
+                elif agent_state.name == 'reflexion_agent':
+                    self.agent_states.reflexion_agent_state = agent_state
 
                 if agent_state.name == 'chat_agent':
                     system_prompt = gpt_system.get_system_text(agent_state.name) if not self.is_screen_monitor else gpt_system.get_system_text(agent_state.name + '_screen_monitor')
@@ -150,6 +152,20 @@ class AgentWrapper():
                     agent_id=agent_state.id,
                     actor=self.client.user,
                     system_prompt=system_prompt
+                )
+            
+            if self.agent_states.reflexion_agent_state is None:
+                self.client.create_agent(
+                    name='reflexion_agent',
+                    memory=self.agent_states.agent_state.memory,
+                    system=gpt_system.get_system_text('reflexion_agent'),
+                )
+            
+            if self.agent_states.background_agent_state is None:
+                self.client.create_agent(
+                    name='background_agent',
+                    memory=self.agent_states.agent_state.memory,
+                    system=gpt_system.get_system_text('background_agent'),
                 )
                 
         else:
@@ -823,7 +839,7 @@ class AgentWrapper():
 
                 extra_messages = []
 
-                most_recent_images = self.temp_message_accumulator.get_recent_images_for_chat()
+                most_recent_images = self.temp_message_accumulator.get_recent_images_for_chat(current_timestamp=datetime.now(self.timezone))
 
                 if len(most_recent_images) > 0:
 

@@ -4,7 +4,7 @@ import uuid
 import threading
 import copy
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
 from mirix.agent.app_constants import TEMPORARY_MESSAGE_LIMIT, GEMINI_MODELS, SKIP_META_MEMORY_MANAGER
@@ -165,14 +165,10 @@ class TemporaryMessageAccumulator:
                                     completed_count += 1
                                     # Note: Don't clean up here, this is just a check
                                 elif upload_status['status'] == 'failed':
-                                    # Upload failed, skip this image but continue processing other images
-                                    print(f"Skipping failed upload for image {j} in message {i}")
                                     # Note: Don't clean up here, this is just a check
                                     continue
                                 elif upload_status['status'] == 'unknown':
                                     # Upload was cleaned up, treat as failed
-                                    print(f"Skipping unknown/cleaned upload for image {j} in message {i}")
-                                    # Note: Don't clean up here, this is just a check
                                     continue
                                 else:
                                     # Still pending
@@ -215,16 +211,42 @@ class TemporaryMessageAccumulator:
                 else:
                     return []
     
-    def get_recent_images_for_chat(self):
+    def get_recent_images_for_chat(self, current_timestamp):
         """Get the most recent images for chat context (non-blocking)."""
         with self._temporary_messages_lock:
             # Get the most recent content
             recent_limit = min(self.temporary_message_limit, len(self.temporary_messages))
             most_recent_content = self.temporary_messages[-recent_limit:] if recent_limit > 0 else []
             
+            # Calculate timestamp cutoff (1 minute ago)
+            cutoff_time = current_timestamp - timedelta(minutes=1)
+            
             # Extract only images for the current message context
             most_recent_images = []
             for timestamp, item in most_recent_content:
+                # Handle different timestamp formats that might be used
+                if isinstance(timestamp, str):
+                    # Try to parse timestamp string and make it timezone-aware
+                    timestamp_dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                    # If timezone-naive, localize it to match the cutoff_time timezone awareness
+                    if timestamp_dt.tzinfo is None:
+                        timestamp_dt = self.timezone.localize(timestamp_dt)
+                elif isinstance(timestamp, datetime):
+                    timestamp_dt = timestamp
+                    # If timezone-naive, localize it to match the cutoff_time timezone awareness
+                    if timestamp_dt.tzinfo is None:
+                        timestamp_dt = self.timezone.localize(timestamp_dt)
+                elif isinstance(timestamp, (int, float)):
+                    # Unix timestamp - make it timezone-aware
+                    timestamp_dt = datetime.fromtimestamp(timestamp, tz=self.timezone)
+                else:
+                    # Skip if we can't parse the timestamp
+                    continue
+                
+                # Check if timestamp is within the past 1 minute
+                if timestamp_dt < cutoff_time:
+                    continue
+                
                 # Check if this item has images
                 if 'image_uris' in item and item['image_uris']:
                     for j, file_ref in enumerate(item['image_uris']):
@@ -250,7 +272,7 @@ class TemporaryMessageAccumulator:
                                     continue
                                 else:
                                     continue  # Still pending, skip
-                                
+                                    
                         # For non-GEMINI models: file_ref is already the image URI, use as-is
                         most_recent_images.append((timestamp, file_ref))
             

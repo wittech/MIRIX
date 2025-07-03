@@ -129,9 +129,96 @@
   transform: translateY(-1px);
 }
 
-/* Persona Editor Styles */
-.persona-editor {
+/* Persona Container Styles */
+.persona-container {
   margin-top: 20px;
+}
+
+/* Persona Display Mode Styles */
+.persona-display-mode {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.persona-display-text {
+  flex: 1;
+  padding: 12px 16px;
+  background-color: #f8f9fa;
+  border: 2px solid #e9ecef;
+  border-radius: 8px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #374151;
+  min-height: 80px;
+  max-height: 120px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.edit-persona-btn {
+  background: linear-gradient(135deg, #007acc, #0056b3);
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 4px rgba(0, 122, 204, 0.2);
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.edit-persona-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #0056b3, #004494);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(0, 122, 204, 0.3);
+}
+
+.edit-persona-btn:disabled {
+  background: linear-gradient(135deg, #9ca3af, #6b7280);
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+/* Persona Edit Mode Styles */
+.persona-edit-mode {
+  margin-top: 16px;
+  padding: 20px;
+  background-color: #f8f9fa;
+  border: 2px solid #e9ecef;
+  border-radius: 8px;
+}
+
+.persona-template-selector {
+  margin-bottom: 20px;
+}
+
+.persona-template-selector label {
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 500;
+  color: #495057;
+  font-size: 14px;
+}
+
+.persona-text-editor {
+  margin-bottom: 20px;
+}
+
+.persona-text-editor label {
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 500;
+  color: #495057;
+  font-size: 14px;
 }
 
 .persona-textarea {
@@ -153,7 +240,7 @@
 .persona-textarea:focus {
   outline: none;
   border-color: #007acc;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+  box-shadow: 0 0 0 3px rgba(0, 122, 204, 0.1);
 }
 
 .persona-textarea::placeholder {
@@ -161,16 +248,15 @@
   font-style: italic;
 }
 
-.persona-editor-actions {
+.persona-edit-actions {
   display: flex;
   align-items: center;
-  gap: 15px;
-  margin-top: 12px;
-  margin-bottom: 8px;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
-.update-persona-btn {
-  background: linear-gradient(135deg, #007acc, #4f46e5);
+.save-persona-btn {
+  background: linear-gradient(135deg, #28a745, #20c997);
   color: white;
   border: none;
   padding: 10px 20px;
@@ -179,20 +265,46 @@
   font-weight: 600;
   cursor: pointer;
   transition: all 0.3s ease;
-  box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+  box-shadow: 0 2px 4px rgba(40, 167, 69, 0.2);
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
-.update-persona-btn:hover:not(:disabled) {
-  background: linear-gradient(135deg, #2563eb, #4338ca);
+.save-persona-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #218838, #1e7e34);
   transform: translateY(-1px);
-  box-shadow: 0 4px 8px rgba(59, 130, 246, 0.3);
+  box-shadow: 0 4px 8px rgba(40, 167, 69, 0.3);
 }
 
-.update-persona-btn:disabled {
+.save-persona-btn:disabled {
   background: linear-gradient(135deg, #9ca3af, #6b7280);
   cursor: not-allowed;
   transform: none;
   box-shadow: none;
+}
+
+.cancel-persona-btn {
+  background: #6c757d;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.cancel-persona-btn:hover:not(:disabled) {
+  background: #5a6268;
+  transform: translateY(-1px);
+}
+
+.cancel-persona-btn:disabled {
+  background: #adb5bd;
+  cursor: not-allowed;
+  transform: none;
 }
 
 .update-message {
@@ -230,21 +342,37 @@
   opacity: 0.6;
 }
 
-/* Dark mode support for persona editor */
+/* Dark mode support for persona interface */
 @media (prefers-color-scheme: dark) {
-  .persona-textarea {
+  .persona-display-text {
     background-color: #374151;
+    border-color: #4b5563;
+    color: #f9fafb;
+  }
+  
+  .persona-edit-mode {
+    background-color: #374151;
+    border-color: #4b5563;
+  }
+  
+  .persona-textarea {
+    background-color: #1f2937;
     border-color: #4b5563;
     color: #f9fafb;
   }
   
   .persona-textarea:focus {
     border-color: #007acc;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+    box-shadow: 0 0 0 3px rgba(0, 122, 204, 0.2);
   }
   
   .persona-textarea::placeholder {
     color: #9ca3af;
+  }
+  
+  .persona-template-selector label,
+  .persona-text-editor label {
+    color: #f9fafb;
   }
   
   .update-message.success {
@@ -292,6 +420,36 @@
   }
   
   .link-button {
+    justify-content: center;
+  }
+  
+  /* Persona responsive styles */
+  .persona-display-mode {
+    flex-direction: column;
+    gap: 12px;
+  }
+  
+  .persona-display-text {
+    min-height: 60px;
+    max-height: 100px;
+  }
+  
+  .edit-persona-btn {
+    align-self: flex-start;
+  }
+  
+  .persona-edit-mode {
+    padding: 16px;
+  }
+  
+  .persona-edit-actions {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  
+  .save-persona-btn,
+  .cancel-persona-btn {
     justify-content: center;
   }
 }

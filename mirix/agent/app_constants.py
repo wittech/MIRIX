@@ -9,3 +9,9 @@ RUNNING_TIMEOUT = 30
 TOTAL_TIMEOUT = 60
 
 SKIP_META_MEMORY_MANAGER = False
+
+# Whether to use the reflexion agent
+WITH_REFLEXION_AGENT = False
+
+# Whether to use the background agent
+WITH_BACKGROUND_AGENT = False

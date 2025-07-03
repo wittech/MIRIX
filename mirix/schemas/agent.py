@@ -25,6 +25,8 @@ class AgentType(str, Enum):
 
     coder_agent = "coder_agent"
     chat_agent = "chat_agent"
+    reflexion_agent = 'reflexion_agent'
+    background_agent = 'background_agent'
     episodic_memory_agent = 'episodic_memory_agent'
     procedural_memory_agent = 'procedural_memory_agent'
     resource_memory_agent = 'resource_memory_agent'

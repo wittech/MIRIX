@@ -120,6 +120,9 @@ class SetTimezoneResponse(BaseModel):
     success: bool
     message: str
 
+class GetTimezoneResponse(BaseModel):
+    timezone: str
+
 class ScreenshotSettingRequest(BaseModel):
     include_recent_screenshots: bool
 
@@ -584,6 +587,19 @@ async def set_memory_model(request: SetModelRequest):
             missing_keys=[],
             model_requirements={}
         )
+
+@app.get("/timezone/current", response_model=GetTimezoneResponse)
+async def get_current_timezone():
+    """Get the current timezone of the agent"""
+    
+    if agent is None:
+        raise HTTPException(status_code=500, detail="Agent not initialized")
+    
+    try:
+        current_timezone = agent.client.server.user_manager.get_user_by_id(agent.client.user.id).timezone
+        return GetTimezoneResponse(timezone=current_timezone)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting current timezone: {str(e)}")
 
 @app.post("/timezone/set", response_model=SetTimezoneResponse)
 async def set_timezone(request: SetTimezoneRequest):
