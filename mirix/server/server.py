@@ -181,7 +181,96 @@ def db_error_handler():
         # raise ValueError(f"SQLite DB error: {str(e)}")
         exit(1)
 
-if settings.mirix_pg_uri_no_default:
+# Check for PGlite mode
+USE_PGLITE = os.environ.get('MIRIX_USE_PGLITE', 'false').lower() == 'true'
+
+if USE_PGLITE:
+    print("PGlite mode detected - setting up PGlite adapter")
+    
+    # Import PGlite connector
+    try:
+        from mirix.database.pglite_connector import pglite_connector
+        
+        # Create a simple adapter to make PGlite work with existing code
+        class PGliteSession:
+            """Adapter to make PGlite work with SQLAlchemy-style code"""
+            
+            def __init__(self, connector):
+                self.connector = connector
+                
+            def execute(self, query, params=None):
+                """Execute a query using PGlite bridge"""
+                if hasattr(query, 'compile'):
+                    # Handle SQLAlchemy query objects
+                    compiled = query.compile(compile_kwargs={"literal_binds": True})
+                    query_str = str(compiled)
+                else:
+                    query_str = str(query)
+                
+                result = self.connector.execute_query(query_str, params)
+                
+                # Create a simple result wrapper
+                class ResultWrapper:
+                    def __init__(self, data):
+                        self.rows = data.get('rows', [])
+                        self.rowcount = data.get('rowCount', 0)
+                        
+                    def scalars(self):
+                        return self.rows
+                        
+                    def all(self):
+                        return self.rows
+                        
+                    def first(self):
+                        return self.rows[0] if self.rows else None
+                        
+                return ResultWrapper(result)
+                
+            def commit(self):
+                pass  # PGlite handles commits automatically
+                
+            def rollback(self):
+                pass  # Basic implementation
+                
+            def close(self):
+                pass  # No need to close PGlite sessions
+        
+        class PGliteEngine:
+            """Engine adapter for PGlite"""
+            
+            def __init__(self, connector):
+                self.connector = connector
+                
+            def connect(self):
+                return PGliteSession(self.connector)
+                
+        # Create the engine
+        engine = PGliteEngine(pglite_connector)
+        
+        # Create sessionmaker
+        class PGliteSessionMaker:
+            def __init__(self, engine):
+                self.engine = engine
+                
+            def __call__(self):
+                return self.engine.connect()
+                
+        SessionLocal = PGliteSessionMaker(engine)
+        
+        # Set config for PGlite mode
+        config.recall_storage_type = "pglite"
+        config.recall_storage_uri = "pglite://local"
+        config.archival_storage_type = "pglite" 
+        config.archival_storage_uri = "pglite://local"
+        
+        print("PGlite adapter initialized successfully")
+        
+    except ImportError as e:
+        print(f"Failed to import PGlite connector: {e}")
+        print("Falling back to SQLite mode")
+        USE_PGLITE = False
+
+if not USE_PGLITE and settings.mirix_pg_uri_no_default:
     print("Creating engine", settings.mirix_pg_uri)
     config.recall_storage_type = "postgres"
     config.recall_storage_uri = settings.mirix_pg_uri_no_default
@@ -200,7 +289,7 @@ if settings.mirix_pg_uri_no_default:
     
     # Create all tables for PostgreSQL
     Base.metadata.create_all(bind=engine)
-else:
+elif not USE_PGLITE:
     # TODO: don't rely on config storage
     engine = create_engine("sqlite:///" + os.path.join(config.recall_storage_path, "sqlite.db"))
 
@@ -229,8 +318,9 @@ else:
     engine.connect = wrapped_connect
 
     Base.metadata.create_all(bind=engine)
-    
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+if not USE_PGLITE:
+    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
 # Dependency

@@ -9,7 +9,8 @@ const Logo = ({
   textColor = 'inherit',
   theme = 'auto' // 'light', 'dark', or 'auto'
 }) => {
-  const logoSrc = '/logo.png';
+  // Use relative path to work in both dev and production
+  const logoSrc = process.env.NODE_ENV === 'production' ? './logo.png' : '/logo.png';
 
   const logoSizes = {
     icon: { width: 32, height: 13 },
