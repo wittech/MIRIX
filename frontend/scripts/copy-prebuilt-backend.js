@@ -62,15 +62,4 @@ if (fs.existsSync(sourceConfigDir)) {
   console.log('⚠️  Warning: No config files found');
 }
 
-// Copy .env file if it exists
-const envFile = path.join(sourceDir, '.env');
-const destEnvFile = path.join(backendDir, '.env');
-
-if (fs.existsSync(envFile)) {
-  fs.copyFileSync(envFile, destEnvFile);
-  console.log('✅ Copied .env file');
-} else {
-  console.log('⚠️  Warning: No .env file found');
-}
-
 console.log('🎉 Backend ready for packaging'); 

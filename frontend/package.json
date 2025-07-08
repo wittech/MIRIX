@@ -33,9 +33,9 @@
     "electron-dev": "concurrently \"npm start\" \"wait-on http://localhost:3000 && electron .\"",
     "electron-pack": "npm run build && npm run copy-backend && electron-builder",
     "copy-backend": "node scripts/copy-prebuilt-backend.js",
-    "test-packaged": "node scripts/test-packaged-app.js",
-    "extract-and-test": "node scripts/extract-and-test.js",
-    "debug-asar": "node scripts/debug-asar.js"
+    "test-dmg-direct": "node scripts/test-dmg-direct.js",
+    "test-backend-logging": "node scripts/test-backend-logging.js",
+    "test-loading-modal": "node scripts/test-loading-modal.js"
   },
   "eslintConfig": {
     "extends": [
@@ -84,10 +84,6 @@
         "filter": [
           "**/*"
         ]
-      },
-      {
-        "from": "backend/.env",
-        "to": "backend/.env"
       }
     ],
     "asarUnpack": [

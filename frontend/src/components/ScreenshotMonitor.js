@@ -59,14 +59,14 @@ const ScreenshotMonitor = ({ settings }) => {
     return imageData.data;
   }, []);
 
-  // Delete screenshot that is too similar
+  // Delete screenshot that is too similar - only call this after backend processing is complete
   const deleteSimilarScreenshot = useCallback(async (filepath) => {
     if (!window.electronAPI || !window.electronAPI.deleteScreenshot) {
       return;
     }
 
     try {
-      const result = await window.electronAPI.deleteScreenshot(filepath);
+      await window.electronAPI.deleteScreenshot(filepath);
     } catch (error) {
       // Silent error handling
     }
@@ -74,10 +74,7 @@ const ScreenshotMonitor = ({ settings }) => {
 
   // Send screenshot to backend with memorizing=true and accumulated audio - VOICE FUNCTIONALITY COMMENTED OUT
   const sendScreenshotToBackend = useCallback(async (screenshotFile) => {
-    if (!screenshotFile) return;
-
-    // Skip if another request is already in progress
-    if (isRequestInProgress) {
+    if (!screenshotFile || isRequestInProgress) {
       return;
     }
 
@@ -144,28 +141,40 @@ const ScreenshotMonitor = ({ settings }) => {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      // We don't need to process the streaming response for monitoring
-      // Just consume it to complete the request
-      const reader = response.body.getReader();
-      while (true) {
-        const { done } = await reader.read();
-        if (done) break;
-      }
-
+      // Increment count immediately after successful response
       setScreenshotCount(prev => prev + 1);
       setLastProcessedTime(new Date().toISOString());
       setStatus('monitoring');
       setError(null);
+
+      // Consume the streaming response to complete the request
+      // This is done after incrementing the count to ensure count updates even if streaming fails
+      try {
+        if (response.body) {
+          const reader = response.body.getReader();
+          while (true) {
+            const { done } = await reader.read();
+            if (done) break;
+          }
+        }
+      } catch (streamError) {
+        // Log streaming error but don't fail the whole request since we already counted it
+        console.warn('Error consuming streaming response:', streamError);
+      }
 
       // Clear accumulated audio after successful send - COMMENTED OUT
       // if (voiceRecorderRef.current && typeof voiceRecorderRef.current.clearAccumulatedAudio === 'function') {
       //   voiceRecorderRef.current.clearAccumulatedAudio();
       // }
 
+      return { success: true, shouldDelete: false };
+
     } catch (err) {
       if (err.name !== 'AbortError') {
+        console.error('Failed to send screenshot:', err);
         setError(`Failed to send screenshot: ${err.message}`);
       }
+      return { success: false, shouldDelete: true };
     } finally {
       setIsRequestInProgress(false);
       // Clear the abort controller if it's still the current one
@@ -213,9 +222,9 @@ const ScreenshotMonitor = ({ settings }) => {
 
       // If similarity check is disabled, send every screenshot
       if (skipSimilarityCheck) {
-        // Check again right before sending to prevent race condition
-        if (!isRequestInProgress) {
-          sendScreenshotToBackend(screenshotFile);
+        const sendResult = await sendScreenshotToBackend(screenshotFile);
+        if (sendResult && sendResult.shouldDelete) {
+          await deleteSimilarScreenshot(screenshotFile.path);
         }
         setStatus('monitoring');
         return;
@@ -226,12 +235,9 @@ const ScreenshotMonitor = ({ settings }) => {
       
       if (!imageResult.success) {
         // If we can't read the image for comparison, just send it
-        // Check again right before sending to prevent race condition
-        if (!isRequestInProgress) {
-          sendScreenshotToBackend(screenshotFile);
-        } else {
-          // Delete the screenshot since it won't be sent
-          deleteSimilarScreenshot(screenshotFile.path);
+        const sendResult = await sendScreenshotToBackend(screenshotFile);
+        if (sendResult && sendResult.shouldDelete) {
+          await deleteSimilarScreenshot(screenshotFile.path);
         }
         setStatus('monitoring');
         return;
@@ -239,8 +245,8 @@ const ScreenshotMonitor = ({ settings }) => {
 
       // Create a temporary canvas to get image data for similarity comparison
       const img = new Image();
-      img.onload = () => {
-        // CRITICAL: Check again here since this is async and may execute much later
+      img.onload = async () => {
+        // Check again here since this is async and may execute much later
         if (isRequestInProgress) {
           setStatus('monitoring');
           setIsProcessingScreenshot(false);
@@ -263,30 +269,27 @@ const ScreenshotMonitor = ({ settings }) => {
 
         // Only send if different enough (below threshold)
         if (similarity < SIMILARITY_THRESHOLD) {
-          // Final check right before sending
-          if (!isRequestInProgress) {
-            sendScreenshotToBackend(screenshotFile);
+          const sendResult = await sendScreenshotToBackend(screenshotFile);
+          if (sendResult && sendResult.success) {
+            // Update last image data only if sending was successful
             lastImageDataRef.current = currentImageData;
-          } else {
-            // Delete the screenshot since it won't be sent
-            deleteSimilarScreenshot(screenshotFile.path);
+          }
+          if (sendResult && sendResult.shouldDelete) {
+            await deleteSimilarScreenshot(screenshotFile.path);
           }
         } else {
           // Delete the screenshot since it's too similar
-          deleteSimilarScreenshot(screenshotFile.path);
+          await deleteSimilarScreenshot(screenshotFile.path);
           setStatus('monitoring');
         }
         setIsProcessingScreenshot(false);
       };
 
-      img.onerror = () => {
+      img.onerror = async () => {
         // If image loading fails, just send the screenshot anyway
-        // Check again right before sending to prevent race condition
-        if (!isRequestInProgress) {
-          sendScreenshotToBackend(screenshotFile);
-        } else {
-          // Delete the screenshot since it won't be sent
-          deleteSimilarScreenshot(screenshotFile.path);
+        const sendResult = await sendScreenshotToBackend(screenshotFile);
+        if (sendResult && sendResult.shouldDelete) {
+          await deleteSimilarScreenshot(screenshotFile.path);
         }
         setStatus('monitoring');
         setIsProcessingScreenshot(false);
@@ -300,7 +303,7 @@ const ScreenshotMonitor = ({ settings }) => {
       setStatus('monitoring');
       setIsProcessingScreenshot(false);
     }
-  }, [calculateImageSimilarity, getImageDataFromCanvas, sendScreenshotToBackend, skipSimilarityCheck, isRequestInProgress, isProcessingScreenshot]);
+  }, [calculateImageSimilarity, getImageDataFromCanvas, sendScreenshotToBackend, deleteSimilarScreenshot, skipSimilarityCheck, isRequestInProgress, isProcessingScreenshot]);
 
   // Start monitoring
   const startMonitoring = useCallback(() => {
@@ -349,9 +352,6 @@ const ScreenshotMonitor = ({ settings }) => {
     // Reset request and processing state
     setIsRequestInProgress(false);
     setIsProcessingScreenshot(false);
-    
-    // Reset counters (optional - you might want to keep them for reference)
-    // setScreenshotCount(0);
   }, [isMonitoring]);
 
   // Cleanup on unmount

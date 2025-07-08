@@ -36,6 +36,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('menu-open-terminal', wrappedCallback);
     return () => ipcRenderer.removeListener('menu-open-terminal', wrappedCallback);
   },
+  
+  // Window event listeners
+  onWindowShow: (callback) => {
+    const wrappedCallback = (event, ...args) => callback(...args);
+    ipcRenderer.on('window-show', wrappedCallback);
+    return () => ipcRenderer.removeListener('window-show', wrappedCallback);
+  },
+  onAppActivate: (callback) => {
+    const wrappedCallback = (event, ...args) => callback(...args);
+    ipcRenderer.on('app-activate', wrappedCallback);
+    return () => ipcRenderer.removeListener('app-activate', wrappedCallback);
+  },
   onMenuTakeScreenshot: (callback) => {
     const wrappedCallback = (event, ...args) => callback(...args);
     ipcRenderer.on('menu-take-screenshot', wrappedCallback);

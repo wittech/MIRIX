@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import ChatWindow from './components/ChatWindow';
 import SettingsPanel from './components/SettingsPanel';
 import ScreenshotMonitor from './components/ScreenshotMonitor';
 import ExistingMemory from './components/ExistingMemory';
 import ApiKeyModal from './components/ApiKeyModal';
+import BackendLoadingModal from './components/BackendLoadingModal';
 import Logo from './components/Logo';
 import queuedFetch from './utils/requestQueue';
 import './App.css';
@@ -27,15 +28,14 @@ function App() {
     modelType: ''
   });
 
-  // Check for missing API keys on startup
-  useEffect(() => {
-    checkApiKeys();
-  }, [settings.serverUrl]);
-
-  // Also check API keys when model changes
-  useEffect(() => {
-    checkApiKeys();
-  }, [settings.model]);
+  // Backend loading modal state
+  const [backendLoading, setBackendLoading] = useState({
+    isVisible: false,
+    isChecking: false,
+    lastCheckTime: null,
+    consecutiveFailures: 0,
+    isReconnection: false // Track if this is a reconnection vs initial connection
+  });
 
   const checkApiKeys = async (forceOpen = false) => {
     try {
@@ -72,6 +72,170 @@ function App() {
     }
   };
 
+  // Check backend health
+  const checkBackendHealth = useCallback(async () => {
+    let shouldProceed = true;
+    
+    // Check if health check is already in progress
+    setBackendLoading(prev => {
+      if (prev.isChecking) {
+        console.log('Health check already in progress, skipping...');
+        shouldProceed = false;
+        return prev;
+      }
+      return { ...prev, isChecking: true };
+    });
+
+    if (!shouldProceed) {
+      return false;
+    }
+
+    try {
+      console.log('🔍 Checking backend health...');
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+
+      const response = await fetch(`${settings.serverUrl}/health`, {
+        method: 'GET',
+        signal: controller.signal,
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      });
+
+      clearTimeout(timeoutId);
+
+      if (response.ok) {
+        console.log('✅ Backend is healthy - hiding loading modal');
+        setBackendLoading(prev => ({
+          ...prev,
+          isVisible: false,
+          isChecking: false,
+          lastCheckTime: Date.now(),
+          consecutiveFailures: 0,
+          isReconnection: false // Reset reconnection flag on success
+        }));
+        return true;
+      } else {
+        throw new Error(`Health check failed with status: ${response.status}`);
+      }
+    } catch (error) {
+      console.warn('❌ Backend health check failed:', error.message);
+      setBackendLoading(prev => ({
+        ...prev,
+        isVisible: true,
+        isChecking: false,
+        lastCheckTime: Date.now(),
+        consecutiveFailures: prev.consecutiveFailures + 1
+        // Keep existing isReconnection flag - don't change it on failure
+      }));
+      return false;
+    }
+  }, [settings.serverUrl]);
+
+  // Retry backend connection
+  const retryBackendConnection = useCallback(async () => {
+    console.log('🔄 Retrying backend connection...');
+    await checkBackendHealth();
+  }, [checkBackendHealth]);
+
+  // Check for missing API keys on startup
+  useEffect(() => {
+    checkApiKeys();
+  }, [settings.serverUrl]);
+
+  // Also check API keys when model changes
+  useEffect(() => {
+    checkApiKeys();
+  }, [settings.model]);
+
+  // Initial backend health check on startup
+  useEffect(() => {
+    const performInitialHealthCheck = async () => {
+      // Show loading modal immediately for initial startup
+      setBackendLoading(prev => ({ 
+        ...prev, 
+        isVisible: true, 
+        isReconnection: false // This is initial startup, not reconnection
+      }));
+      
+      // Wait a moment for the UI to update
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Check backend health
+      await checkBackendHealth();
+    };
+
+    performInitialHealthCheck();
+  }, [settings.serverUrl, checkBackendHealth]);
+
+  // Periodic backend health check
+  useEffect(() => {
+    const interval = setInterval(() => {
+      // Only check if modal is visible or if it's been a while since last check
+      setBackendLoading(prev => {
+        const timeSinceLastCheck = Date.now() - (prev.lastCheckTime || 0);
+        const shouldCheck = prev.isVisible || timeSinceLastCheck > 30000; // Check every 30 seconds
+        
+        if (shouldCheck && !prev.isChecking) {
+          console.log('🔄 Periodic health check triggered. Modal visible:', prev.isVisible, 'Time since last check:', Math.round(timeSinceLastCheck/1000), 's');
+          checkBackendHealth();
+        }
+        
+        return prev; // Don't actually update state, just check conditions
+      });
+    }, 5000); // Check every 5 seconds when modal is visible
+
+    return () => clearInterval(interval);
+  }, [checkBackendHealth]); // Only depend on checkBackendHealth, not the state values
+
+  // Handle window focus/visibility events for backend health check
+  useEffect(() => {
+    const handleWindowFocus = async () => {
+      console.log('🔍 Window focused - checking backend health...');
+      
+      // Check backend health first, only show modal if it fails
+      const healthCheckResult = await checkBackendHealth();
+      
+      // If health check failed, show reconnection modal
+      if (!healthCheckResult) {
+        setBackendLoading(prev => ({ 
+          ...prev, 
+          isVisible: true, 
+          isReconnection: true 
+        }));
+      }
+    };
+
+    const handleVisibilityChange = async () => {
+      if (!document.hidden) {
+        console.log('🔍 Document became visible - checking backend health...');
+        
+        // Check backend health first, only show modal if it fails
+        const healthCheckResult = await checkBackendHealth();
+        
+        // If health check failed, show reconnection modal
+        if (!healthCheckResult) {
+          setBackendLoading(prev => ({ 
+            ...prev, 
+            isVisible: true, 
+            isReconnection: true 
+          }));
+        }
+      }
+    };
+
+    // Add event listeners
+    window.addEventListener('focus', handleWindowFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // Cleanup
+    return () => {
+      window.removeEventListener('focus', handleWindowFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [checkBackendHealth]);
+
   const handleApiKeyModalClose = () => {
     setApiKeyModal(prev => ({ ...prev, isOpen: false }));
   };
@@ -104,6 +268,49 @@ function App() {
         setActiveTab('chat');
       });
       cleanupFunctions.push(cleanupTakeScreenshot);
+
+      // Handle Electron window events for backend health checks
+      const cleanupWindowShow = window.electronAPI.onWindowShow(async () => {
+        console.log('🔍 Electron window shown - checking backend health...');
+        
+        // Show loading modal if backend hasn't been checked recently
+        const timeSinceLastCheck = Date.now() - (backendLoading.lastCheckTime || 0);
+        if (timeSinceLastCheck > 5000) { // If more than 5 seconds since last check
+          setBackendLoading(prev => ({ 
+            ...prev, 
+            isVisible: true, 
+            isReconnection: true // This is a reconnection when window is shown
+          }));
+          
+          // Wait a moment for UI to update
+          await new Promise(resolve => setTimeout(resolve, 300));
+        }
+        
+        // Check backend health
+        await checkBackendHealth();
+      });
+      cleanupFunctions.push(cleanupWindowShow);
+
+      const cleanupAppActivate = window.electronAPI.onAppActivate(async () => {
+        console.log('🔍 Electron app activated - checking backend health...');
+        
+        // Show loading modal if backend hasn't been checked recently
+        const timeSinceLastCheck = Date.now() - (backendLoading.lastCheckTime || 0);
+        if (timeSinceLastCheck > 5000) { // If more than 5 seconds since last check
+          setBackendLoading(prev => ({ 
+            ...prev, 
+            isVisible: true, 
+            isReconnection: true // This is a reconnection when app is activated
+          }));
+          
+          // Wait a moment for UI to update
+          await new Promise(resolve => setTimeout(resolve, 300));
+        }
+        
+        // Check backend health
+        await checkBackendHealth();
+      });
+      cleanupFunctions.push(cleanupAppActivate);
     }
 
     // Cleanup listeners on unmount
@@ -112,7 +319,7 @@ function App() {
         if (cleanup) cleanup();
       });
     };
-  }, []);
+  }, [checkBackendHealth, backendLoading.lastCheckTime]);
 
   const handleSettingsChange = (newSettings) => {
     setSettings(prev => ({ ...prev, ...newSettings }));
@@ -202,6 +409,13 @@ function App() {
         onClose={handleApiKeyModalClose}
         serverUrl={settings.serverUrl}
         onSubmit={handleApiKeySubmit}
+      />
+
+      {/* Backend Loading Modal */}
+      <BackendLoadingModal
+        isVisible={backendLoading.isVisible}
+        onRetry={retryBackendConnection}
+        isReconnection={backendLoading.isReconnection}
       />
     </div>
   );

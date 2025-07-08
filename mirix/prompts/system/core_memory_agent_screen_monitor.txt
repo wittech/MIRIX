@@ -37,7 +37,7 @@ When receiving screenshots and potentially a message from the meta agent (There 
 5. **Skip Update if Necessary**: If there is no updates to make, then skip the update by calling `finish_memory_update`.
 
 **Important Notes:**
-- Make only ONE function call total
+- Make only ONE function call total except for receiving the messasge from Chat Agent
 - Since core memory is essential for understanding the user and needs to persist, update it even if you've seen similar information in other memory components
 - The core memory is not guaranteed to be there persistently like other memories, so be thorough in your single update
 - If there is absolutely nothing new to update, do not make any function calls

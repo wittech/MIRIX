@@ -395,16 +395,20 @@ class AgentWrapper():
             
         try:
             self.google_client = genai.Client(api_key=gemini_api_key)
-            self.logger.info("Retrieving existing files from Google Clouds...")
             
-            try:
-                existing_files = [x for x in self.google_client.files.list()]
-            except Exception as e:
-                self.logger.error(f"Error retrieving existing files from Google Clouds: {e}")
-                existing_files = []
+            # self.logger.info("Retrieving existing files from Google Clouds...")
+            
+            # try:
+            #     existing_files = [x for x in self.google_client.files.list()]
+            # except Exception as e:
+            #     self.logger.error(f"Error retrieving existing files from Google Clouds: {e}")
+            #     existing_files = []
+            # existing_image_names = set([file.name for file in existing_files])
+            
+            # self.logger.info(f"# of Existing files in Google Clouds: {len(existing_image_names)}")
+
+            existing_files = []
             existing_image_names = set([file.name for file in existing_files])
-            
-            self.logger.info(f"# of Existing files in Google Clouds: {len(existing_image_names)}")
 
             # update the database, delete the files that are in the database but got deleted somehow (potentially due to the calls unrelated to Mirix) in the cloud
             for file_name in self.client.server.cloud_file_mapping_manager.list_all_cloud_file_ids():

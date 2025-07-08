@@ -65,7 +65,6 @@ This will create a self-contained desktop application with:
 The final application will be available in `frontend/dist/`.
 
 
-
 ## License
 
 Mirix is released under the MIT License. See the [LICENSE](LICENSE) file for more details.
