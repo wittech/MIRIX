@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   takeScreenshotDisplay: (displayId) => ipcRenderer.invoke('take-screenshot-display', displayId),
   listDisplays: () => ipcRenderer.invoke('list-displays'),
   cleanupScreenshots: (maxAge) => ipcRenderer.invoke('cleanup-screenshots', maxAge),
+  openScreenRecordingPrefs: () => ipcRenderer.invoke('open-screen-recording-prefs'),
   
   // Image reading function for similarity comparison
   readImageAsBase64: (filepath) => ipcRenderer.invoke('read-image-base64', filepath),

@@ -228,6 +228,8 @@ class AgentWrapper():
             self.uri_to_create_time = {}
             self.upload_manager = None
 
+        print(f"🔄 Initializing model: {self.model_name}")
+
         self.set_model(self.model_name)
         self.set_memory_model(self.model_name)
         
@@ -633,7 +635,9 @@ class AgentWrapper():
             'meta_memory_agent',
             'semantic_memory_agent',
             'core_memory_agent',
-            'resource_memory_agent'
+            'resource_memory_agent',
+            'reflexion_agent',
+            'background_agent'
         ]
         
         for agent_state in self.client.list_agents():

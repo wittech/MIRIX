@@ -219,6 +219,14 @@ const ExistingMemory = ({ settings }) => {
     }
   }, [activeSubTab, settings.serverUrl]);
 
+  // Refresh data when backend reconnects
+  useEffect(() => {
+    if (settings.lastBackendRefresh && settings.serverUrl) {
+      console.log('ExistingMemory: backend reconnected, refreshing data');
+      fetchMemoryData(activeSubTab);
+    }
+  }, [settings.lastBackendRefresh, settings.serverUrl, activeSubTab]);
+
   const renderMemoryContent = () => {
     const currentViewMode = getCurrentViewMode();
     

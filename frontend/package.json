@@ -96,11 +96,11 @@
     "mac": {
       "category": "public.app-category.productivity",
       "target": "dmg",
-      "icon": "public/icon.icns"
+      "icon": "public/icon.png"
     },
     "win": {
       "target": "nsis",
-      "icon": "public/icon.ico"
+      "icon": "public/icon.png"
     },
     "linux": {
       "target": "AppImage",

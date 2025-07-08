@@ -182,6 +182,18 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, isVisible })
     }
   }, [isVisible, settings.serverUrl, fetchCurrentModel, fetchCurrentMemoryModel, fetchCurrentTimezone]);
 
+  // Refresh all backend data when backend reconnects
+  useEffect(() => {
+    if (settings.lastBackendRefresh && settings.serverUrl) {
+      console.log('SettingsPanel: backend reconnected, refreshing all data');
+      fetchPersonaDetails();
+      fetchCoreMemoryPersona();
+      fetchCurrentModel();
+      fetchCurrentMemoryModel();
+      fetchCurrentTimezone();
+    }
+  }, [settings.lastBackendRefresh, settings.serverUrl, fetchPersonaDetails, fetchCoreMemoryPersona, fetchCurrentModel, fetchCurrentMemoryModel, fetchCurrentTimezone]);
+
   // Apply persona template only on initial load when we have both persona data and no text loaded yet
   useEffect(() => {
     if (settings.persona && Object.keys(personaDetails).length > 0 && !selectedPersonaText) {

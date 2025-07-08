@@ -12,6 +12,8 @@ const ScreenshotMonitor = ({ settings }) => {
   const [skipSimilarityCheck, setSkipSimilarityCheck] = useState(false);
   const [isRequestInProgress, setIsRequestInProgress] = useState(false);
   const [isProcessingScreenshot, setIsProcessingScreenshot] = useState(false);
+  const [hasScreenPermission, setHasScreenPermission] = useState(null);
+  const [isCheckingPermission, setIsCheckingPermission] = useState(false);
   
   // Voice recording state - COMMENTED OUT
   // const [voiceData, setVoiceData] = useState([]);
@@ -24,6 +26,79 @@ const ScreenshotMonitor = ({ settings }) => {
   // Configuration (matches main.py defaults)
   const INTERVAL = 2000; // 2 seconds (changed from 1 second)
   const SIMILARITY_THRESHOLD = 0.99;
+
+  // Check screenshot permissions
+  const checkScreenPermissions = useCallback(async () => {
+    if (!window.electronAPI || !window.electronAPI.takeScreenshot) {
+      setHasScreenPermission(false);
+      setError('Screenshot functionality is only available in the desktop app');
+      return false;
+    }
+
+    setIsCheckingPermission(true);
+    setError(null);
+
+    try {
+      // Try to take a test screenshot to check permissions
+      const result = await window.electronAPI.takeScreenshot();
+      
+      if (result.success) {
+        setHasScreenPermission(true);
+        // Clean up the test screenshot
+        if (result.filepath) {
+          try {
+            await window.electronAPI.deleteScreenshot(result.filepath);
+          } catch (cleanupError) {
+            // Silent cleanup error
+          }
+        }
+        return true;
+      } else {
+        setHasScreenPermission(false);
+        if (result.error && result.error.includes('permission')) {
+          setError('Screen recording permission not granted. Please grant screen recording permissions in System Preferences > Security & Privacy > Screen Recording and restart the application.');
+        } else {
+          setError(result.error || 'Failed to access screenshot functionality');
+        }
+        return false;
+      }
+    } catch (err) {
+      setHasScreenPermission(false);
+      if (err.message && err.message.includes('permission')) {
+        setError('Screen recording permission not granted. Please grant screen recording permissions in System Preferences > Security & Privacy > Screen Recording and restart the application.');
+      } else {
+        setError(`Permission check failed: ${err.message}`);
+      }
+      return false;
+    } finally {
+      setIsCheckingPermission(false);
+    }
+  }, []);
+
+
+
+  // Open System Preferences to Screen Recording section
+  const openSystemPreferences = useCallback(async () => {
+    if (!window.electronAPI || !window.electronAPI.openScreenRecordingPrefs) {
+      setError('System Preferences functionality is only available in the desktop app');
+      return;
+    }
+
+    try {
+      const result = await window.electronAPI.openScreenRecordingPrefs();
+      if (result.success) {
+        setError(null);
+        // Check permissions again after a short delay to see if they were granted
+        setTimeout(() => {
+          checkScreenPermissions();
+        }, 2000);
+      } else {
+        setError(result.message || 'Failed to open System Preferences');
+      }
+    } catch (err) {
+      setError(`Failed to open System Preferences: ${err.message}`);
+    }
+  }, [checkScreenPermissions]);
 
   // Handle voice data from the recorder - COMMENTED OUT
   // const handleVoiceData = useCallback((data) => {
@@ -306,11 +381,12 @@ const ScreenshotMonitor = ({ settings }) => {
   }, [calculateImageSimilarity, getImageDataFromCanvas, sendScreenshotToBackend, deleteSimilarScreenshot, skipSimilarityCheck, isRequestInProgress, isProcessingScreenshot]);
 
   // Start monitoring
-  const startMonitoring = useCallback(() => {
+  const startMonitoring = useCallback(async () => {
     if (isMonitoring) return;
 
-    if (!window.electronAPI || !window.electronAPI.takeScreenshot) {
-      setError('Screenshot functionality is only available in the desktop app');
+    // Check permissions first
+    const hasPermission = await checkScreenPermissions();
+    if (!hasPermission) {
       return;
     }
 
@@ -325,7 +401,7 @@ const ScreenshotMonitor = ({ settings }) => {
 
     // Take first screenshot immediately
     processScreenshot();
-  }, [isMonitoring, processScreenshot]);
+  }, [isMonitoring, processScreenshot, checkScreenPermissions]);
 
   // Stop monitoring
   const stopMonitoring = useCallback(() => {
@@ -353,6 +429,11 @@ const ScreenshotMonitor = ({ settings }) => {
     setIsRequestInProgress(false);
     setIsProcessingScreenshot(false);
   }, [isMonitoring]);
+
+  // Check permissions on mount
+  React.useEffect(() => {
+    checkScreenPermissions();
+  }, [checkScreenPermissions]);
 
   // Cleanup on unmount
   React.useEffect(() => {
@@ -393,15 +474,36 @@ const ScreenshotMonitor = ({ settings }) => {
             />
             <span>Send all screenshots (skip similarity check)</span>
           </label>
+          {hasScreenPermission === false && (
+            <button
+              className="open-prefs-button"
+              onClick={openSystemPreferences}
+              disabled={false}
+              style={{
+                backgroundColor: '#dc3545',
+                color: 'white',
+                border: 'none',
+                padding: '8px 16px',
+                borderRadius: '4px',
+                                  cursor: 'pointer',
+                marginRight: '8px'
+              }}
+            >
+              ⚙️ Open System Preferences
+            </button>
+          )}
           <button
             className={`monitor-toggle ${isMonitoring ? 'active' : ''}`}
             onClick={isMonitoring ? stopMonitoring : startMonitoring}
+            disabled={hasScreenPermission === false}
             style={{
-              backgroundColor: isMonitoring ? '#dc3545' : '#28a745',
-              color: 'white'
+              backgroundColor: isMonitoring ? '#dc3545' : hasScreenPermission === false ? '#6c757d' : '#28a745',
+              color: 'white',
+                              cursor: hasScreenPermission === false ? 'not-allowed' : 'pointer'
             }}
           >
-            {isMonitoring ? '⏹️ Stop Monitor' : '▶️ Start Monitor'}
+            {hasScreenPermission === false ? '🔒 Permission Required' :
+             isMonitoring ? '⏹️ Stop Monitor' : '▶️ Start Monitor'}
           </button>
         </div>
       </div>
@@ -413,6 +515,19 @@ const ScreenshotMonitor = ({ settings }) => {
           </span>
           <span className="status-text">
             Status: <strong style={{ color: getStatusColor() }}>{status}</strong>
+          </span>
+        </div>
+        
+        <div className="status-item">
+          <span className="permission-status">
+            📋 Permissions: <strong style={{ 
+              color: hasScreenPermission === true ? '#28a745' : 
+                     hasScreenPermission === false ? '#dc3545' : '#ffc107' 
+            }}>
+              {isCheckingPermission ? '⏳ Checking...' :
+               hasScreenPermission === true ? '✅ Granted' : 
+               hasScreenPermission === false ? '❌ Denied' : '⏳ Checking...'}
+            </strong>
           </span>
         </div>
         
@@ -430,6 +545,29 @@ const ScreenshotMonitor = ({ settings }) => {
       {error && (
         <div className="monitor-error">
           ⚠️ {error}
+          {error.includes('permission') && (
+            <div className="permission-help" style={{ marginTop: '8px', fontSize: '14px', color: '#6c757d' }}>
+              <strong>How to grant permission:</strong> 
+              <br />1. Click "⚙️ Open System Preferences" button above
+              <br />2. Find "MIRIX" in the list and check the box next to it
+              <br />3. No restart required - permissions take effect immediately
+            </div>
+          )}
+        </div>
+      )}
+
+      {hasScreenPermission === false && !error && (
+        <div className="monitor-warning" style={{ 
+          backgroundColor: '#fff3cd', 
+          color: '#856404', 
+          padding: '12px', 
+          borderRadius: '4px', 
+          border: '1px solid #ffeaa7',
+          marginTop: '12px'
+        }}>
+          🔒 Screen recording permission is required to use the screen monitor feature. 
+          <br />
+          <strong>Click "⚙️ Open System Preferences" to grant permission directly!</strong>
         </div>
       )}
 

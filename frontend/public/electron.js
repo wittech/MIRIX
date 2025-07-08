@@ -358,8 +358,8 @@ function startBackendServer() {
 }
 
 async function checkBackendHealth() {
-  const maxRetries = 5;
-  const retryDelay = 1000;
+  const maxRetries = 20;
+  const retryDelay = 20000;
   
   for (let i = 0; i < maxRetries; i++) {
     try {
@@ -584,8 +584,10 @@ async function startBackendInBackground() {
 }
 
 app.on('window-all-closed', () => {
-  stopBackendServer();
+  // On macOS, keep the backend running when window is closed
+  // Only stop backend on other platforms where the app actually quits
   if (process.platform !== 'darwin') {
+    stopBackendServer();
     app.quit();
   }
 });
@@ -629,6 +631,42 @@ ipcMain.handle('select-save-path', async (event, options = {}) => {
     canceled: result.canceled,
     filePath: result.filePath
   };
+});
+
+
+
+// IPC handler for opening System Preferences to Screen Recording
+ipcMain.handle('open-screen-recording-prefs', async () => {
+  try {
+    if (process.platform === 'darwin') {
+      // Open System Preferences to Privacy & Security > Screen Recording
+      const { spawn } = require('child_process');
+      
+      // Try the new System Settings first (macOS 13+)
+      try {
+        spawn('open', ['x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture']);
+      } catch (error) {
+        // Fall back to old System Preferences (macOS 12 and earlier)
+        spawn('open', ['x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture']);
+      }
+      
+      return {
+        success: true,
+        message: 'Opening System Preferences...'
+      };
+    } else {
+      return {
+        success: false,
+        message: 'System Preferences not available on this platform'
+      };
+    }
+  } catch (error) {
+    safeLog.error('Failed to open System Preferences:', error);
+    return {
+      success: false,
+      message: error.message
+    };
+  }
 });
 
 // IPC handler for taking screenshot

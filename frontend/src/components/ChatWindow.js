@@ -80,6 +80,41 @@ const ChatWindow = ({ settings, messages, setMessages }) => {
     loadCurrentModel();
   }, [settings.serverUrl, settings.model]);
 
+  // Refresh data when backend reconnects
+  useEffect(() => {
+    const refreshBackendData = async () => {
+      if (settings.lastBackendRefresh && settings.serverUrl) {
+        console.log('ChatWindow: backend reconnected, refreshing data');
+        
+        // Reload screenshot setting
+        try {
+          const response = await queuedFetch(`${settings.serverUrl}/screenshot_setting`);
+          if (response.ok) {
+            const data = await response.json();
+            setIncludeScreenshots(data.include_recent_screenshots);
+          }
+        } catch (error) {
+          console.error('Error reloading screenshot setting:', error);
+        }
+        
+        // Reload current model
+        try {
+          const response = await queuedFetch(`${settings.serverUrl}/models/current`);
+          if (response.ok) {
+            const data = await response.json();
+            setCurrentModel(data.current_model);
+          }
+        } catch (error) {
+          console.error('Error reloading current model:', error);
+          // Fallback to settings.model if API call fails
+          setCurrentModel(settings.model);
+        }
+      }
+    };
+    
+    refreshBackendData();
+  }, [settings.lastBackendRefresh, settings.serverUrl, settings.model]);
+
   // Function to save image files to local directory
   const saveImageToLocal = async (file) => {
     // Check if we're in Electron environment and handlers are available
