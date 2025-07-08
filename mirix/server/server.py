@@ -291,7 +291,24 @@ if not USE_PGLITE and settings.mirix_pg_uri_no_default:
     Base.metadata.create_all(bind=engine)
 elif not USE_PGLITE:
     # TODO: don't rely on config storage
-    engine = create_engine("sqlite:///" + os.path.join(config.recall_storage_path, "sqlite.db"))
+    sqlite_db_path = os.path.join(config.recall_storage_path, "sqlite.db")
+    
+    # Configure SQLite engine with proper concurrency settings
+    engine = create_engine(
+        f"sqlite:///{sqlite_db_path}",
+        # Connection pooling configuration for better concurrency
+        pool_size=20,
+        max_overflow=30,
+        pool_timeout=30,
+        pool_recycle=3600,
+        pool_pre_ping=True,
+        # Enable SQLite-specific options
+        connect_args={
+            "check_same_thread": False,  # Allow sharing connections between threads
+            "timeout": 30,  # 30 second timeout for database locks
+        },
+        echo=False,
+    )
 
     # Store the original connect method
     original_connect = engine.connect

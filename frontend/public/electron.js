@@ -9,7 +9,8 @@ const http = require('http');
 
 // Override isDev for packaged apps
 const isPackaged = app.isPackaged || 
-                  process.mainModule.filename.indexOf('app.asar') !== -1 ||
+                  (process.mainModule && process.mainModule.filename.indexOf('app.asar') !== -1) ||
+                  (require.main && require.main.filename.indexOf('app.asar') !== -1) ||
                   process.execPath.indexOf('MIRIX.app') !== -1 ||
                   __dirname.indexOf('app.asar') !== -1;
 const actuallyDev = isDev && !isPackaged;
@@ -638,18 +639,14 @@ ipcMain.handle('take-screenshot', async () => {
     const filename = `screenshot-${timestamp}.png`;
     const filepath = path.join(imagesDir, filename);
     
-    safeLog.log(`Taking screenshot: ${filepath}`);
-    
     // Check if we're on macOS and ask for screen recording permissions
     if (process.platform === 'darwin') {
       // Check if we have screen recording permissions
       const hasScreenPermission = systemPreferences.getMediaAccessStatus('screen');
-      safeLog.log(`Screen recording permission status: ${hasScreenPermission}`);
       
       if (hasScreenPermission !== 'granted') {
         // Request screen recording permissions
         const permissionGranted = await systemPreferences.askForMediaAccess('screen');
-        safeLog.log(`Screen recording permission granted: ${permissionGranted}`);
         
         if (!permissionGranted) {
           throw new Error('Screen recording permission not granted. Please grant screen recording permissions in System Preferences > Security & Privacy > Screen Recording and restart the application.');
@@ -664,7 +661,6 @@ ipcMain.handle('take-screenshot', async () => {
       // Write the buffer to file
       fs.writeFileSync(filepath, imgBuffer);
       
-      safeLog.log(`Screenshot buffer captured: ${imgBuffer.length} bytes`);
     } catch (screenshotError) {
       safeLog.error('Screenshot capture failed:', screenshotError);
       
@@ -698,7 +694,6 @@ ipcMain.handle('take-screenshot', async () => {
     }
     
     const stats = fs.statSync(filepath);
-    safeLog.log(`Screenshot saved successfully: ${filepath} (${stats.size} bytes)`);
     
     return {
       success: true,
@@ -812,21 +807,17 @@ ipcMain.handle('cleanup-screenshots', async (event, maxAge = 24 * 60 * 60 * 1000
 // IPC handler for reading image as base64 (for similarity comparison)
 ipcMain.handle('read-image-base64', async (event, filepath) => {
   try {
-    safeLog.log(`Reading image as base64: ${filepath}`);
     
     if (!fs.existsSync(filepath)) {
       throw new Error(`File does not exist: ${filepath}`);
     }
 
     const stats = fs.statSync(filepath);
-    safeLog.log(`Image file exists, size: ${stats.size} bytes`);
     
     const imageBuffer = fs.readFileSync(filepath);
     const base64Data = imageBuffer.toString('base64');
     const mimeType = 'image/png'; // Assuming PNG format for screenshots
     const dataUrl = `data:${mimeType};base64,${base64Data}`;
-
-    safeLog.log(`Successfully read image as base64: ${filepath} (${imageBuffer.length} bytes)`);
 
     return {
       success: true,
