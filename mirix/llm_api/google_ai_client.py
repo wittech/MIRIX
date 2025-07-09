@@ -68,14 +68,20 @@ class GoogleAIClient(LLMClientBase):
             [m.to_google_ai_dict() for m in messages],
         )
 
+        generation_config = {
+            "temperature": llm_config.temperature,
+            "max_output_tokens": llm_config.max_tokens,
+        }
+        
+        # Only add thinkingConfig for models that support it
+        # gemini-2.0-flash and gemini-1.5-pro don't support thinking
+        if not ("2.0" in llm_config.model or "1.5" in llm_config.model):
+            generation_config['thinkingConfig'] = {'thinkingBudget': 1024}  # TODO: put into llm_config
+        
         request_data = {
             "contents": self.fill_image_content_in_messages(contents, existing_file_uris=existing_file_uris),
             "tools": tools,
-            "generation_config": {
-                "temperature": llm_config.temperature,
-                "max_output_tokens": llm_config.max_tokens,
-                'thinkingConfig': {'thinkingBudget': 1024} # TODO: put into llm_config
-            },
+            "generation_config": generation_config,
         }
 
         # write tool config

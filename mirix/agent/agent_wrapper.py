@@ -558,6 +558,12 @@ class AgentWrapper():
                 llm_config=llm_config,
                 actor=self.client.user
             )
+            # set the model for reflexion agent
+            self.client.server.agent_manager.update_llm_config(
+                agent_id=self.agent_states.reflexion_agent_state.id,
+                llm_config=llm_config,
+                actor=self.client.user
+            )
             
             # Check for missing API keys for the new model
             status = self.check_api_key_status()
