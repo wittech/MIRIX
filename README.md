@@ -56,5 +56,10 @@ Mirix is released under the Apache License 2.0. See the [LICENSE](LICENSE) file 
 
 For questions, suggestions, or issues, please open an issue on the GitHub repository or contact us at `yuw164@ucsd.edu`
 
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=Mirix-AI/MIRIX&type=Date)](https://star-history.com/#Mirix-AI/MIRIX.&Date)
+
 ## Acknowledgement
 We would like to thank [Letta](https://github.com/letta-ai/letta) for open-sourcing their framework, which served as the foundation for the memory system in this project.

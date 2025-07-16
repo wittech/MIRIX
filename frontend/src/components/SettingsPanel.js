@@ -194,13 +194,6 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, isVisible })
     }
   }, [settings.lastBackendRefresh, settings.serverUrl, fetchPersonaDetails, fetchCoreMemoryPersona, fetchCurrentModel, fetchCurrentMemoryModel, fetchCurrentTimezone]);
 
-  // Apply persona template only on initial load when we have both persona data and no text loaded yet
-  useEffect(() => {
-    if (settings.persona && Object.keys(personaDetails).length > 0 && !selectedPersonaText) {
-      applyPersonaTemplate(settings.persona);
-    }
-  }, [settings.persona, personaDetails, selectedPersonaText, applyPersonaTemplate]);
-
   const handlePersonaChange = async (newPersona) => {
     console.log('handlePersonaChange called with:', newPersona);
     console.log('personaDetails:', personaDetails);
