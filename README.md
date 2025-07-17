@@ -56,6 +56,24 @@ Mirix is released under the Apache License 2.0. See the [LICENSE](LICENSE) file 
 
 For questions, suggestions, or issues, please open an issue on the GitHub repository or contact us at `yuw164@ucsd.edu`
 
+## Join Our Community
+
+Connect with other Mirix users, share your thoughts, and get support:
+
+<div align="center">
+<table>
+<tr>
+<td align="center">
+<img src="frontend/public/discord-qr.png" alt="Discord QR Code" width="200"/><br/>
+<strong>Discord Community</strong>
+</td>
+<td align="center">
+<img src="frontend/public/wechat-qr.png" alt="WeChat QR Code" width="200"/><br/>
+<strong>WeChat Group</strong>
+</td>
+</tr>
+</table>
+</div>
 
 ## Star History
 
