@@ -101,6 +101,7 @@ class AgentWrapper():
         with open(agent_config_file, "r") as f:
             agent_config = yaml.safe_load(f)
 
+        self.agent_config = agent_config
         self.agent_name = agent_config['agent_name']
         self.model_name = agent_config['model_name']
         self.is_screen_monitor = agent_config.get('is_screen_monitor', False)
@@ -548,6 +549,15 @@ class AgentWrapper():
                     context_window=128000,
                 )
             else:
+                assert 'model_endpoint' in self.agent_config, "model_endpoint is required for custom models"
+                llm_config = LLMConfig(
+                    model=model_name,
+                    model_endpoint_type="openai",
+                    model_endpoint=self.agent_config['model_endpoint'],
+                    model_wrapper=None,
+                    context_window=128000,
+                    **self.agent_config['generation_config']
+                )
                 # Fallback to default_config for unsupported models
                 llm_config = LLMConfig.default_config(model_name)
             
@@ -609,7 +619,16 @@ class AgentWrapper():
                     context_window=128000,
                 )
             else:
-                raise ValueError(f"Invalid memory model: {new_model}")
+                assert 'model_endpoint' in self.agent_config, "model_endpoint is required for custom models"
+
+                llm_config = LLMConfig(
+                    model=new_model,
+                    model_endpoint_type="openai",
+                    model_endpoint=self.agent_config['model_endpoint'],
+                    model_wrapper=None,
+                    context_window=128000,
+                    **self.agent_config['generation_config']
+                )
         
         else:
             
