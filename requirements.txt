@@ -39,3 +39,4 @@ ffmpeg
 pg8000
 pgvector
 json_repair
+rich

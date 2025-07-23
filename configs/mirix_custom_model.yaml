@@ -4,3 +4,4 @@ model_endpoint: http://localhost:8000/v1
 generation_config:
   temperature: 0.6
   max_tokens: 4096
+  context_window: 32768
