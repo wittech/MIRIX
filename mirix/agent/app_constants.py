@@ -1,7 +1,7 @@
 TEMPORARY_MESSAGE_LIMIT = 20
 MAXIMUM_NUM_IMAGES_IN_CLOUD = 600
 
-GEMINI_MODELS = ['gemini-2.0-flash', 'gemini-2.5-flash-preview-04-17', 'gemini-1.5-pro', 'gemini-2.0-flash-lite', 'gemini-2.5-flash']
+GEMINI_MODELS = ['gemini-2.0-flash', 'gemini-2.5-flash-lite', 'gemini-1.5-pro', 'gemini-2.0-flash-lite', 'gemini-2.5-flash']
 OPENAI_MODELS = ['gpt-4.1-mini', 'gpt-4.1', 'gpt-4o-mini', 'gpt-4o', 'o4-mini']
 
 STUCK_TIMEOUT = 10
