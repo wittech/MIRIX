@@ -553,7 +553,7 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, isVisible })
     'claude-3-5-sonnet-20241022',
     'gemini-2.0-flash',
     'gemini-2.5-flash',
-    'gemini-2.5-flash-preview-04-17',
+    'gemini-2.5-flash-lite',
     'gemini-1.5-pro',
     'gemini-2.0-flash-lite'
   ];
@@ -565,7 +565,7 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, isVisible })
   const baseMemoryModels = [
     'gemini-2.0-flash',
     'gemini-2.5-flash',
-    'gemini-2.5-flash-preview-04-17'
+    'gemini-2.5-flash-lite'
   ];
 
   // Combine base memory models with custom models

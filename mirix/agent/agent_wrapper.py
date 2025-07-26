@@ -640,7 +640,7 @@ class AgentWrapper():
         """Set the model specifically for memory management operations"""
         
         # Define allowed memory models
-        ALLOWED_MEMORY_MODELS = ['gemini-2.0-flash', 'gemini-2.5-flash-preview-04-17', 'gemini-2.5-flash']
+        ALLOWED_MEMORY_MODELS = ['gemini-2.0-flash', 'gemini-2.5-flash-lite', 'gemini-2.5-flash']
 
         # Validate the model
         if new_model not in ALLOWED_MEMORY_MODELS:
