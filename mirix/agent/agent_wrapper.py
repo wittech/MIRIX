@@ -150,7 +150,7 @@ class AgentWrapper():
                 elif agent_state.name == 'background_agent':
                     self.agent_states.background_agent_state = agent_state
 
-                system_prompt = gpt_system.get_system_text(agent_state.name) if not self.is_screen_monitor else gpt_system.get_system_text('screen_monitor/' + agent_state.name)
+                system_prompt = gpt_system.get_system_text('base/' + agent_state.name) if not self.is_screen_monitor else gpt_system.get_system_text('screen_monitor/' + agent_state.name)
 
                 self.client.server.agent_manager.update_agent_tools_and_system_prompts(
                     agent_id=agent_state.id,
@@ -163,7 +163,7 @@ class AgentWrapper():
                     name='reflexion_agent',
                     memory=self.agent_states.agent_state.memory,
                     agent_type=AgentType.reflexion_agent,
-                    system=gpt_system.get_system_text('reflexion_agent'),
+                    system=gpt_system.get_system_text('base/reflexion_agent'),
                 )
                 setattr(self.agent_states, 'reflexion_agent_state', reflexion_agent_state)
             
@@ -172,7 +172,7 @@ class AgentWrapper():
                     name='background_agent',
                     agent_type=AgentType.background_agent,
                     memory=self.agent_states.agent_state.memory,
-                    system=gpt_system.get_system_text('background_agent'),
+                    system=gpt_system.get_system_text('base/background_agent'),
                 )
                 setattr(self.agent_states, 'background_agent_state', background_agent_state)
             
@@ -190,7 +190,7 @@ class AgentWrapper():
                     agent_state = self.client.create_agent(
                         name=config['name'],
                         memory=core_memory,
-                        system = gpt_system.get_system_text('screen_monitor/' + config['name']) if self.is_screen_monitor else gpt_system.get_system_text(config['name'])
+                        system = gpt_system.get_system_text('screen_monitor/' + config['name']) if self.is_screen_monitor else gpt_system.get_system_text('base/' + config['name'])
                     )
                 else:
                     # All other agents follow the same pattern
@@ -198,7 +198,7 @@ class AgentWrapper():
                         name=config['name'],
                         agent_type=config['agent_type'],
                         memory=core_memory,
-                        system = gpt_system.get_system_text('screen_monitor/' + config['name']) if self.is_screen_monitor else gpt_system.get_system_text(config['name']),
+                        system = gpt_system.get_system_text('screen_monitor/' + config['name']) if self.is_screen_monitor else gpt_system.get_system_text('base/' + config['name']),
                         include_base_tools=config['include_base_tools'],
                     )
                 
@@ -268,7 +268,7 @@ class AgentWrapper():
             if self.is_screen_monitor:
                 file_name = 'screen_monitor/chat_agent'
             else:
-                file_name = 'chat_agent'
+                file_name = 'base/chat_agent'
             
             if is_screen_monitoring:
                 file_name = file_name + '_monitor_on'
