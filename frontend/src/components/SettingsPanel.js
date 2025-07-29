@@ -853,7 +853,7 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, isVisible })
           <h3>About</h3>
           <div className="about-info">
             <p><strong>MIRIX Desktop</strong></p>
-            <p>Version 0.1.0</p>
+            <p>Version 0.1.1</p>
             <p>AI Assistant powered by advanced language models</p>
             <div className="about-links">
               <button 
