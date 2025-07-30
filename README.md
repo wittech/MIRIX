@@ -54,7 +54,7 @@ Mirix is released under the Apache License 2.0. See the [LICENSE](LICENSE) file 
 
 ## Contact
 
-For questions, suggestions, or issues, please open an issue on the GitHub repository or contact us at `yuw164@ucsd.edu`
+For questions, suggestions, or issues, please open an issue on the GitHub repository or contact us at `yuwang@mirix.io`
 
 ## Join Our Community
 
