@@ -40,3 +40,4 @@ pg8000
 pgvector
 json_repair
 rich
+psycopg2
