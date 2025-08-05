@@ -74,6 +74,9 @@ class LLMConfig(BaseModel):
     max_reasoning_tokens: int = Field(
         0, description="Configurable thinking budget for extended thinking, only used if enable_reasoner is True. Minimum value is 1024."
     )
+    api_key: Optional[str] = Field(
+        None, description="Custom API key for this specific model configuration (used for custom models)"
+    )
 
     # FIXME hack to silence pydantic protected namespace warning
     model_config = ConfigDict(protected_namespaces=())

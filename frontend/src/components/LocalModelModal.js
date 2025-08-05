@@ -6,6 +6,7 @@ function LocalModelModal({ isOpen, onClose, serverUrl, onSuccess }) {
   const [formData, setFormData] = useState({
     model_name: '',
     model_endpoint: '',
+    api_key: '',
     temperature: 0.7,
     max_tokens: 4096,
     maximum_length: 32768
@@ -34,6 +35,10 @@ function LocalModelModal({ isOpen, onClose, serverUrl, onSuccess }) {
       setError('Model endpoint is required');
       return;
     }
+    if (!formData.api_key.trim()) {
+      setError('API key is required');
+      return;
+    }
     
     setIsLoading(true);
     setError('');
@@ -54,6 +59,7 @@ function LocalModelModal({ isOpen, onClose, serverUrl, onSuccess }) {
           setFormData({
             model_name: '',
             model_endpoint: '',
+            api_key: '',
             temperature: 0.7,
             max_tokens: 4096,
             maximum_length: 32768
@@ -85,6 +91,7 @@ function LocalModelModal({ isOpen, onClose, serverUrl, onSuccess }) {
     setFormData({
       model_name: '',
       model_endpoint: '',
+      api_key: '',
       temperature: 0.7,
       max_tokens: 4096,
       maximum_length: 32768
@@ -141,6 +148,25 @@ function LocalModelModal({ isOpen, onClose, serverUrl, onSuccess }) {
             />
             <small className="field-description">
               The API endpoint URL for your deployed model
+            </small>
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="api_key">
+              API Key <span className="required">*</span>
+            </label>
+            <input
+              type="password"
+              id="api_key"
+              name="api_key"
+              value={formData.api_key}
+              onChange={handleInputChange}
+              placeholder="Enter your API key for this model"
+              disabled={isLoading}
+              required
+            />
+            <small className="field-description">
+              The API key to authenticate with your model endpoint
             </small>
           </div>
 

@@ -585,6 +585,7 @@ class AgentWrapper():
                     model_endpoint_type="openai",
                     model_endpoint=custom_agent_config['model_endpoint'],
                     model_wrapper=None,
+                    api_key=custom_agent_config.get('api_key'),
                     **custom_agent_config['generation_config']
                 )
 
@@ -595,6 +596,7 @@ class AgentWrapper():
                     model_endpoint_type="openai",
                     model_endpoint=self.agent_config['model_endpoint'],
                     model_wrapper=None,
+                    api_key=self.agent_config.get('api_key'),
                     **self.agent_config['generation_config']
                 )
             
@@ -664,6 +666,7 @@ class AgentWrapper():
                     model_endpoint_type="openai",
                     model_endpoint=custom_agent_config['model_endpoint'],
                     model_wrapper=None,
+                    api_key=custom_agent_config.get('api_key'),
                     **custom_agent_config['generation_config']
                 )
             
@@ -675,6 +678,7 @@ class AgentWrapper():
                     model_endpoint_type="openai",
                     model_endpoint=self.agent_config['model_endpoint'],
                     model_wrapper=None,
+                    api_key=self.agent_config.get('api_key'),
                     **self.agent_config['generation_config']
                 )
         
@@ -839,28 +843,609 @@ class AgentWrapper():
             else:
                 self.logger.warning("Warning: Cannot delete files from Google Cloud - Gemini client not initialized")
 
-    def reflexion_on_memory(self):
+    def reflextion_on_memory(self):
         """
-        Run the reflexion process.
+        Run the reflexion process with comprehensive memory analysis:
+        1. Call specific agents to remove redundancy in each memory type (episodic, semantic, core, resource, procedural, knowledge vault)
+        2. Call reflexion agent to identify and resolve potential conflicts between memories
+        3. Call agents to identify patterns and analyze new memories
         """
+        
+        self.logger.info("Starting comprehensive reflexion on memory...")
+        
+        # Step 1: Call specific memory agents to remove redundancy
+        self.logger.info("Step 1: Calling memory agents to remove redundancy...")
+        redundancy_results = self._call_agents_to_remove_redundancy()
+        
+        # Step 2: Call reflexion agent to identify and resolve conflicts
+        self.logger.info("Step 2: Calling reflexion agent to resolve conflicts...")
+        conflict_results = self._call_reflexion_agent_for_conflicts()
+        
+        # Step 3: Call agents to connect memories. 
+        # connect("epi_id", "sem_id")
+        
 
-        message = f"Please reflex on the existing memories that you can see. Perform necessary changes to reduce redundancy, transfer memories between different components, and infer new memories."
+        # Step 4: Call agents to identify patterns and create new memories
+        self.logger.info("Step 3: Calling agents to analyze patterns and create insights...")
+        pattern_results = self._call_agents_for_pattern_analysis()
+        
+        # Final summary
+        final_summary = {
+            'redundancy_actions': redundancy_results,
+            'conflict_resolutions': conflict_results,
+            'pattern_insights': pattern_results
+        }
+        
+        self.logger.info("Reflexion process completed with actual agent actions.")
+        return final_summary
 
-        response, _ = self.message_queue.send_message_in_queue(
-            self.client,
-            self.agent_states.reflexion_agent_state.id,
-            {
-                'message': message,
-            }, 
-            agent_type='reflexion',
-        )
+    def _call_agents_to_remove_redundancy(self):
+        """Call specific memory agents to actually remove redundancy in their respective memory types"""
+        redundancy_results = {}
+        
+        # Call episodic memory agent to remove redundancy
+        self.logger.info("Calling episodic memory agent to remove redundancy...")
+        try:
+            message = "Please review your episodic memories and remove any redundant or duplicate entries. Look for similar events, overlapping timeframes, or repeated information. Merge similar memories where appropriate and delete exact duplicates. Focus on maintaining the most informative and comprehensive version of each memory."
+            
+            response, _ = self.message_queue.send_message_in_queue(
+                self.client,
+                self.agent_states.episodic_memory_agent_state.id,
+                {'message': message},
+                agent_type='episodic_memory',
+            )
+            redundancy_results['episodic'] = response
+        except Exception as e:
+            self.logger.error(f"Error calling episodic memory agent: {e}")
+            redundancy_results['episodic'] = f"Error: {e}"
+        
+        # Call semantic memory agent to remove redundancy
+        self.logger.info("Calling semantic memory agent to remove redundancy...")
+        try:
+            message = "Please review your semantic memories and eliminate redundancy. Look for duplicate concepts, overlapping knowledge entries, or repetitive information. Consolidate similar semantic items and remove exact duplicates while preserving the most complete and accurate information."
+            
+            response, _ = self.message_queue.send_message_in_queue(
+                self.client,
+                self.agent_states.semantic_memory_agent_state.id,
+                {'message': message},
+                agent_type='semantic_memory',
+            )
+            redundancy_results['semantic'] = response
+        except Exception as e:
+            self.logger.error(f"Error calling semantic memory agent: {e}")
+            redundancy_results['semantic'] = f"Error: {e}"
+        
+        # Call core memory agent to remove redundancy
+        self.logger.info("Calling core memory agent to remove redundancy...")
+        try:
+            message = "Please review the core memory blocks and remove any redundant or overlapping content. Look for duplicate information across different blocks, consolidate related content, and ensure each block contains unique and essential information without unnecessary repetition."
+            
+            response, _ = self.message_queue.send_message_in_queue(
+                self.client,
+                self.agent_states.core_memory_agent_state.id,
+                {'message': message},
+                agent_type='core_memory',
+            )
+            redundancy_results['core'] = response
+        except Exception as e:
+            self.logger.error(f"Error calling core memory agent: {e}")
+            redundancy_results['core'] = f"Error: {e}"
+        
+        # Call resource memory agent to remove redundancy
+        self.logger.info("Calling resource memory agent to remove redundancy...")
+        try:
+            message = "Please review your resource memories and remove redundant entries. Look for duplicate files, similar documents, or repeated resource information. Consolidate similar resources and remove exact duplicates while maintaining the most useful and comprehensive versions."
+            
+            response, _ = self.message_queue.send_message_in_queue(
+                self.client,
+                self.agent_states.resource_memory_agent_state.id,
+                {'message': message},
+                agent_type='resource_memory',
+            )
+            redundancy_results['resource'] = response
+        except Exception as e:
+            self.logger.error(f"Error calling resource memory agent: {e}")
+            redundancy_results['resource'] = f"Error: {e}"
+        
+        # Call procedural memory agent to remove redundancy
+        self.logger.info("Calling procedural memory agent to remove redundancy...")
+        try:
+            message = "Please review your procedural memories and eliminate redundancy. Look for duplicate procedures, overlapping step sequences, or repetitive process information. Merge similar procedures and remove exact duplicates while preserving the most accurate and complete procedural knowledge."
+            
+            response, _ = self.message_queue.send_message_in_queue(
+                self.client,
+                self.agent_states.procedural_memory_agent_state.id,
+                {'message': message},
+                agent_type='procedural_memory',
+            )
+            redundancy_results['procedural'] = response
+        except Exception as e:
+            self.logger.error(f"Error calling procedural memory agent: {e}")
+            redundancy_results['procedural'] = f"Error: {e}"
+        
+        # Call knowledge vault agent to remove redundancy
+        self.logger.info("Calling knowledge vault agent to remove redundancy...")
+        try:
+            message = "Please review your knowledge vault entries and remove redundant information. Look for duplicate credentials, repeated sensitive information, or overlapping security-related data. Consolidate similar entries and remove exact duplicates while maintaining security and completeness."
+            
+            response, _ = self.message_queue.send_message_in_queue(
+                self.client,
+                self.agent_states.knowledge_vault_agent_state.id,
+                {'message': message},
+                agent_type='knowledge_vault',
+            )
+            redundancy_results['knowledge_vault'] = response
+        except Exception as e:
+            self.logger.error(f"Error calling knowledge vault agent: {e}")
+            redundancy_results['knowledge_vault'] = f"Error: {e}"
+        
+        return redundancy_results
 
-        return response
+    def _call_reflexion_agent_for_conflicts(self):
+        """Call reflexion agent to identify and resolve conflicts between memories"""
+        self.logger.info("Calling reflexion agent to resolve memory conflicts...")
+        
+        try:
+            message = """Please analyze all memories across different memory types (episodic, semantic, core, resource, procedural, knowledge vault) and identify potential conflicts:
+
+1. IDENTIFY CONFLICTS:
+   - Look for contradictory information between different memory types
+   - Find temporal inconsistencies in episodic memories
+   - Detect conflicting facts or procedures
+   - Identify outdated information that conflicts with newer data
+
+2. RESOLVE CONFLICTS:
+   - Update outdated information with more recent, accurate data
+   - Flag unresolvable conflicts for human review
+   - Merge conflicting memories where appropriate
+   - Create clarifying notes for ambiguous situations
+
+3. REPORT ACTIONS:
+   - Provide a detailed summary of conflicts found
+   - List all resolutions and updates made
+   - Highlight any conflicts requiring human intervention
+
+Please perform these actions and provide a comprehensive report of all conflict resolutions made."""
+            
+            response, _ = self.message_queue.send_message_in_queue(
+                self.client,
+                self.agent_states.reflexion_agent_state.id,
+                {'message': message},
+                agent_type='reflexion',
+            )
+            return response
+            
+        except Exception as e:
+            self.logger.error(f"Error calling reflexion agent for conflicts: {e}")
+            return f"Error: {e}"
+
+    def _call_agents_for_pattern_analysis(self):
+        """Call agents to identify patterns and create new insights"""
+        pattern_results = {}
+        
+        # Call reflexion agent for overall pattern analysis
+        self.logger.info("Calling reflexion agent for pattern analysis...")
+        try:
+            message = """Please analyze patterns across all memory types and generate new insights:
+
+1. IDENTIFY PATTERNS:
+   - Find recurring themes across episodic and semantic memories
+   - Detect temporal patterns in memory formation
+   - Identify relationship patterns between different memories
+   - Discover usage patterns in procedural and resource memories
+
+2. GENERATE INSIGHTS:
+   - Create new semantic connections based on identified patterns
+   - Generate meta-knowledge about user preferences and behaviors
+   - Identify gaps in knowledge that should be filled
+   - Suggest optimizations for memory organization
+
+3. CREATE NEW MEMORIES:
+   - Add new semantic memories based on discovered patterns
+   - Update core memory with new insights about the user
+   - Create procedural memories for frequently repeated patterns
+   - Generate summary memories for related episodic events
+
+Please perform this analysis and create new memories as appropriate. Provide a detailed report of patterns found and new memories created."""
+            
+            response, _ = self.message_queue.send_message_in_queue(
+                self.client,
+                self.agent_states.reflexion_agent_state.id,
+                {'message': message},
+                agent_type='reflexion',
+            )
+            pattern_results['reflexion_patterns'] = response
+            
+        except Exception as e:
+            self.logger.error(f"Error calling reflexion agent for patterns: {e}")
+            pattern_results['reflexion_patterns'] = f"Error: {e}"
+        
+        # Call semantic memory agent for new connections
+        self.logger.info("Calling semantic memory agent for new connections...")
+        try:
+            message = "Based on recent episodic memories and existing semantic knowledge, please identify new semantic connections and create new semantic memories that capture emerging patterns, relationships, or insights. Look for connections between concepts that weren't previously linked."
+            
+            response, _ = self.message_queue.send_message_in_queue(
+                self.client,
+                self.agent_states.semantic_memory_agent_state.id,
+                {'message': message},
+                agent_type='semantic_memory',
+            )
+            pattern_results['semantic_connections'] = response
+            
+        except Exception as e:
+            self.logger.error(f"Error calling semantic memory agent for patterns: {e}")
+            pattern_results['semantic_connections'] = f"Error: {e}"
+        
+        # Call meta memory agent for high-level insights
+        self.logger.info("Calling meta memory agent for high-level insights...")
+        try:
+            message = "Please analyze the overall memory system and generate meta-insights about memory usage patterns, knowledge gaps, and opportunities for memory optimization. Create new meta-memories that capture these high-level observations about the memory system itself."
+            
+            response, _ = self.message_queue.send_message_in_queue(
+                self.client,
+                self.agent_states.meta_memory_agent_state.id,
+                {'message': message},
+                agent_type='meta_memory',
+            )
+            pattern_results['meta_insights'] = response
+            
+        except Exception as e:
+            self.logger.error(f"Error calling meta memory agent: {e}")
+            pattern_results['meta_insights'] = f"Error: {e}"
+        
+        return pattern_results
+
+    def _remove_memory_redundancy(self):
+        """Remove redundancy in each memory type"""
+        redundancy_results = {}
+        
+        try:
+            # Analyze episodic memory redundancy
+            episodic_memories = self.client.server.episodic_memory_manager.list_episodic_memory(
+                self.agent_states.episodic_memory_agent_state, limit=None
+            )
+            redundancy_results['episodic'] = self._analyze_redundancy(episodic_memories, 'episodic')
+            
+            # Analyze semantic memory redundancy
+            semantic_memories = self.client.server.semantic_memory_manager.list_semantic_items(
+                self.agent_states.semantic_memory_agent_state, limit=None
+            )
+            redundancy_results['semantic'] = self._analyze_redundancy(semantic_memories, 'semantic')
+            
+            # Analyze core memory redundancy
+            core_blocks = self.client.server.block_manager.get_blocks(self.client.user)
+            redundancy_results['core'] = self._analyze_core_redundancy(core_blocks)
+            
+            # Analyze resource memory redundancy
+            resource_memories = self.client.server.resource_memory_manager.list_resources(
+                self.agent_states.resource_memory_agent_state, limit=None
+            )
+            redundancy_results['resource'] = self._analyze_redundancy(resource_memories, 'resource')
+            
+            # Analyze procedural memory redundancy
+            procedural_memories = self.client.server.procedural_memory_manager.list_procedures(
+                self.agent_states.procedural_memory_agent_state, limit=None
+            )
+            redundancy_results['procedural'] = self._analyze_redundancy(procedural_memories, 'procedural')
+            
+            # Analyze knowledge vault redundancy
+            knowledge_vault_items = self.client.server.knowledge_vault_manager.list_knowledge(
+                self.agent_states.knowledge_vault_agent_state, limit=None
+            )
+            redundancy_results['knowledge_vault'] = self._analyze_redundancy(knowledge_vault_items, 'knowledge_vault')
+            
+        except Exception as e:
+            self.logger.error(f"Error analyzing redundancy: {e}")
+            redundancy_results['error'] = str(e)
+        
+        return redundancy_results
+
+    def _analyze_redundancy(self, memories, memory_type):
+        """Analyze redundancy within a specific memory type"""
+        if not memories:
+            return f"No {memory_type} memories found."
+        
+        redundancy_info = {
+            'total_count': len(memories),
+            'potential_duplicates': [],
+            'similar_items': [],
+            'recommendations': []
+        }
+        
+        # Compare memories for similarity
+        for i, memory1 in enumerate(memories):
+            for j, memory2 in enumerate(memories[i+1:], i+1):
+                similarity_score = self._calculate_similarity(memory1, memory2, memory_type)
+                
+                if similarity_score > 0.9:  # Very high similarity - potential duplicate
+                    redundancy_info['potential_duplicates'].append({
+                        'memory1_id': getattr(memory1, 'id', i),
+                        'memory2_id': getattr(memory2, 'id', j),
+                        'similarity': similarity_score,
+                        'content1': self._get_memory_content(memory1, memory_type),
+                        'content2': self._get_memory_content(memory2, memory_type)
+                    })
+                elif similarity_score > 0.7:  # High similarity - could be merged
+                    redundancy_info['similar_items'].append({
+                        'memory1_id': getattr(memory1, 'id', i),
+                        'memory2_id': getattr(memory2, 'id', j),
+                        'similarity': similarity_score,
+                        'content1': self._get_memory_content(memory1, memory_type),
+                        'content2': self._get_memory_content(memory2, memory_type)
+                    })
+        
+        # Generate recommendations
+        if redundancy_info['potential_duplicates']:
+            redundancy_info['recommendations'].append(f"Found {len(redundancy_info['potential_duplicates'])} potential duplicates that should be reviewed for removal.")
+        
+        if redundancy_info['similar_items']:
+            redundancy_info['recommendations'].append(f"Found {len(redundancy_info['similar_items'])} similar items that could be merged or consolidated.")
+        
+        return redundancy_info
+
+    def _analyze_core_redundancy(self, core_blocks):
+        """Analyze redundancy in core memory blocks"""
+        if not core_blocks:
+            return "No core memory blocks found."
+        
+        redundancy_info = {
+            'total_blocks': len(core_blocks),
+            'overlapping_content': [],
+            'recommendations': []
+        }
+        
+        # Check for overlapping content between core blocks
+        for i, block1 in enumerate(core_blocks):
+            for j, block2 in enumerate(core_blocks[i+1:], i+1):
+                if self._check_core_overlap(block1, block2):
+                    redundancy_info['overlapping_content'].append({
+                        'block1_label': block1.label,
+                        'block2_label': block2.label,
+                        'overlap_description': f"Potential content overlap between {block1.label} and {block2.label}"
+                    })
+        
+        if redundancy_info['overlapping_content']:
+            redundancy_info['recommendations'].append("Review overlapping core memory blocks for consolidation.")
+        
+        return redundancy_info
+
+    def _identify_memory_conflicts(self):
+        """Identify potential conflicts between memories across all types"""
+        conflict_results = {
+            'cross_type_conflicts': [],
+            'temporal_conflicts': [],
+            'content_conflicts': [],
+            'recommendations': []
+        }
+        
+        try:
+            # Get all memory types
+            all_memories = {
+                'episodic': self.client.server.episodic_memory_manager.list_episodic_memory(
+                    self.agent_states.episodic_memory_agent_state, limit=None
+                ) or [],
+                'semantic': self.client.server.semantic_memory_manager.list_semantic_items(
+                    self.agent_states.semantic_memory_agent_state, limit=None
+                ) or [],
+                'procedural': self.client.server.procedural_memory_manager.list_procedures(
+                    self.agent_states.procedural_memory_agent_state, limit=None
+                ) or [],
+                'resource': self.client.server.resource_memory_manager.list_resources(
+                    self.agent_states.resource_memory_agent_state, limit=None
+                ) or [],
+                'knowledge_vault': self.client.server.knowledge_vault_manager.list_knowledge(
+                    self.agent_states.knowledge_vault_agent_state, limit=None
+                ) or []
+            }
+            
+            # Check for conflicts between different memory types
+            conflict_results['cross_type_conflicts'] = self._find_cross_type_conflicts(all_memories)
+            
+            # Check for temporal conflicts in episodic memories
+            conflict_results['temporal_conflicts'] = self._find_temporal_conflicts(all_memories['episodic'])
+            
+            # Check for content conflicts across all memories
+            conflict_results['content_conflicts'] = self._find_content_conflicts(all_memories)
+            
+            # Generate recommendations
+            total_conflicts = (len(conflict_results['cross_type_conflicts']) + 
+                             len(conflict_results['temporal_conflicts']) + 
+                             len(conflict_results['content_conflicts']))
+            
+            if total_conflicts > 0:
+                conflict_results['recommendations'].append(f"Found {total_conflicts} potential conflicts that need resolution.")
+            else:
+                conflict_results['recommendations'].append("No significant conflicts detected between memories.")
+                
+        except Exception as e:
+            self.logger.error(f"Error identifying conflicts: {e}")
+            conflict_results['error'] = str(e)
+        
+        return conflict_results
+
+    def _analyze_memory_patterns(self):
+        """Identify patterns and analyze new memories"""
+        pattern_results = {
+            'recurring_themes': [],
+            'temporal_patterns': [],
+            'relationship_patterns': [],
+            'new_insights': [],
+            'recommendations': []
+        }
+        
+        try:
+            # Get all memories for pattern analysis
+            all_memories = self._get_all_memories_for_analysis()
+            
+            # Identify recurring themes
+            pattern_results['recurring_themes'] = self._identify_recurring_themes(all_memories)
+            
+            # Identify temporal patterns
+            pattern_results['temporal_patterns'] = self._identify_temporal_patterns(all_memories)
+            
+            # Identify relationship patterns
+            pattern_results['relationship_patterns'] = self._identify_relationship_patterns(all_memories)
+            
+            # Generate new insights based on patterns
+            pattern_results['new_insights'] = self._generate_insights_from_patterns(pattern_results)
+            
+            # Generate recommendations
+            pattern_results['recommendations'] = self._generate_pattern_recommendations(pattern_results)
+            
+        except Exception as e:
+            self.logger.error(f"Error analyzing patterns: {e}")
+            pattern_results['error'] = str(e)
+        
+        return pattern_results
+
+    def _calculate_similarity(self, memory1, memory2, memory_type):
+        """Calculate similarity between two memories (simplified implementation)"""
+        try:
+            content1 = self._get_memory_content(memory1, memory_type).lower()
+            content2 = self._get_memory_content(memory2, memory_type).lower()
+            
+            # Simple similarity based on common words (in real implementation, would use embeddings)
+            words1 = set(content1.split())
+            words2 = set(content2.split())
+            
+            if not words1 and not words2:
+                return 0.0
+            
+            intersection = len(words1.intersection(words2))
+            union = len(words1.union(words2))
+            
+            return intersection / union if union > 0 else 0.0
+            
+        except Exception:
+            return 0.0
+
+    def _get_memory_content(self, memory, memory_type):
+        """Extract relevant content from memory based on type"""
+        try:
+            if memory_type == 'episodic':
+                return f"{getattr(memory, 'summary', '')} {getattr(memory, 'details', '')}"
+            elif memory_type == 'semantic':
+                return f"{getattr(memory, 'name', '')} {getattr(memory, 'summary', '')} {getattr(memory, 'details', '')}"
+            elif memory_type == 'procedural':
+                return f"{getattr(memory, 'summary', '')} {' '.join(getattr(memory, 'steps', []))}"
+            elif memory_type == 'resource':
+                return f"{getattr(memory, 'title', '')} {getattr(memory, 'summary', '')} {getattr(memory, 'content', '')}"
+            elif memory_type == 'knowledge_vault':
+                return f"{getattr(memory, 'caption', '')} {getattr(memory, 'secret_value', '')}"
+            else:
+                return str(memory)
+        except Exception:
+            return ""
+
+    def _check_core_overlap(self, block1, block2):
+        """Check if two core memory blocks have overlapping content"""
+        try:
+            content1 = getattr(block1, 'value', '').lower()
+            content2 = getattr(block2, 'value', '').lower()
+            
+            if not content1 or not content2:
+                return False
+            
+            # Simple overlap check (could be enhanced with more sophisticated analysis)
+            words1 = set(content1.split())
+            words2 = set(content2.split())
+            
+            overlap_ratio = len(words1.intersection(words2)) / min(len(words1), len(words2))
+            return overlap_ratio > 0.3  # 30% overlap threshold
+            
+        except Exception:
+            return False
+
+    def _find_cross_type_conflicts(self, all_memories):
+        """Find conflicts between different memory types"""
+        conflicts = []
+        # Implementation would compare memories across types for conflicting information
+        # This is a placeholder for the complex logic
+        return conflicts
+
+    def _find_temporal_conflicts(self, episodic_memories):
+        """Find temporal conflicts in episodic memories"""
+        conflicts = []
+        # Implementation would check for chronologically impossible events
+        return conflicts
+
+    def _find_content_conflicts(self, all_memories):
+        """Find content conflicts across all memories"""
+        conflicts = []
+        # Implementation would identify contradictory information
+        return conflicts
+
+    def _get_all_memories_for_analysis(self):
+        """Get all memories organized for pattern analysis"""
+        return {
+            'episodic': self.client.server.episodic_memory_manager.list_episodic_memory(
+                self.agent_states.episodic_memory_agent_state, limit=None
+            ) or [],
+            'semantic': self.client.server.semantic_memory_manager.list_semantic_items(
+                self.agent_states.semantic_memory_agent_state, limit=None
+            ) or [],
+            'procedural': self.client.server.procedural_memory_manager.list_procedures(
+                self.agent_states.procedural_memory_agent_state, limit=None
+            ) or [],
+            'resource': self.client.server.resource_memory_manager.list_resources(
+                self.agent_states.resource_memory_agent_state, limit=None
+            ) or [],
+            'knowledge_vault': self.client.server.knowledge_vault_manager.list_knowledge(
+                self.agent_states.knowledge_vault_agent_state, limit=None
+            ) or []
+        }
+
+    def _identify_recurring_themes(self, all_memories):
+        """Identify recurring themes across memories"""
+        themes = []
+        # Implementation would analyze content for recurring topics
+        return themes
+
+    def _identify_temporal_patterns(self, all_memories):
+        """Identify temporal patterns in memories"""
+        patterns = []
+        # Implementation would analyze time-based patterns
+        return patterns
+
+    def _identify_relationship_patterns(self, all_memories):
+        """Identify relationship patterns between memories"""
+        patterns = []
+        # Implementation would find connections between memories
+        return patterns
+
+    def _generate_insights_from_patterns(self, pattern_results):
+        """Generate new insights based on identified patterns"""
+        insights = []
+        # Implementation would create new knowledge from patterns
+        return insights
+
+    def _generate_pattern_recommendations(self, pattern_results):
+        """Generate recommendations based on pattern analysis"""
+        recommendations = []
+        # Implementation would suggest actions based on patterns
+        return recommendations
+
+    def _compile_reflexion_summary(self, redundancy_results, conflict_results, pattern_results):
+        """Compile a comprehensive summary of the reflexion analysis"""
+        summary = {
+            'redundancy_summary': redundancy_results,
+            'conflict_summary': conflict_results,
+            'pattern_summary': pattern_results,
+            'overall_recommendations': []
+        }
+        
+        # Add overall recommendations
+        if any('error' not in results for results in [redundancy_results, conflict_results, pattern_results]):
+            summary['overall_recommendations'].append("Complete comprehensive memory optimization based on analysis.")
+        
+        return summary
 
     def send_message(self, 
                       message=None, 
                       images=None, 
                       image_uris=None, 
+                      sources=None,
                       voice_files=None,
                       memorizing=False, 
                       delete_after_upload=True, 
@@ -903,6 +1488,7 @@ class AgentWrapper():
                 {
                     'message': message,
                     'image_uris': image_uris,
+                    'sources': sources,
                     'voice_files': voice_files,
                 },
                 timestamp,

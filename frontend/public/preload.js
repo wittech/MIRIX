@@ -15,11 +15,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   cleanupScreenshots: (maxAge) => ipcRenderer.invoke('cleanup-screenshots', maxAge),
   openScreenRecordingPrefs: () => ipcRenderer.invoke('open-screen-recording-prefs'),
   
+  // Window/App capture functions
+  getCaptureSources: () => ipcRenderer.invoke('get-capture-sources'),
+  takeSourceScreenshot: (sourceId) => ipcRenderer.invoke('take-source-screenshot', sourceId),
+  
   // Image reading function for similarity comparison
   readImageAsBase64: (filepath) => ipcRenderer.invoke('read-image-base64', filepath),
   
   // Delete screenshot function (for removing similar screenshots)
   deleteScreenshot: (filepath) => ipcRenderer.invoke('delete-screenshot', filepath),
+  
+  // Debug comparison image saving
+  saveDebugComparisonImage: (imageData, filename) => ipcRenderer.invoke('save-debug-comparison-image', imageData, filename),
   
   // Image saving functions
   saveImageToTmp: (sourcePath, filename) => ipcRenderer.invoke('save-image-to-tmp', sourcePath, filename),

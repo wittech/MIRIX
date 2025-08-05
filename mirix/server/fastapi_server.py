@@ -71,6 +71,7 @@ agent = None
 class MessageRequest(BaseModel):
     message: Optional[str] = None
     image_uris: Optional[List[str]] = None
+    sources: Optional[List[str]] = None  # Source names corresponding to image_uris
     voice_files: Optional[List[str]] = None  # Base64 encoded voice files
     memorizing: bool = False
     is_screen_monitoring: Optional[bool] = False
@@ -109,6 +110,7 @@ class SetModelRequest(BaseModel):
 class AddCustomModelRequest(BaseModel):
     model_name: str
     model_endpoint: str
+    api_key: str
     temperature: float = 0.7
     max_tokens: int = 4096
     maximum_length: int = 32768
@@ -304,6 +306,7 @@ async def send_message_endpoint(request: MessageRequest):
             lambda: agent.send_message(
                 message=request.message,
                 image_uris=request.image_uris,
+                sources=request.sources,  # Pass sources to agent
                 voice_files=request.voice_files,  # Pass voice files to agent
                 memorizing=request.memorizing
             )
@@ -385,6 +388,7 @@ async def send_streaming_message_endpoint(request: MessageRequest):
                         lambda: agent.send_message(
                             message=request.message,
                             image_uris=request.image_uris,
+                            sources=request.sources,  # Pass sources to agent
                             voice_files=request.voice_files,  # Pass raw voice files
                             memorizing=request.memorizing,
                             display_intermediate_message=display_intermediate_message
@@ -697,6 +701,7 @@ async def add_custom_model(request: AddCustomModelRequest):
             'agent_name': 'mirix',
             'model_name': request.model_name,
             'model_endpoint': request.model_endpoint,
+            'api_key': request.api_key,
             'generation_config': {
                 'temperature': request.temperature,
                 'max_tokens': request.max_tokens,

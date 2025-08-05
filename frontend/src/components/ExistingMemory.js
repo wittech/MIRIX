@@ -68,6 +68,21 @@ const ExistingMemory = ({ settings }) => {
     );
   };
 
+  // Function to render text with preserved newlines
+  const renderTextWithNewlines = (text, query) => {
+    if (!text) return text;
+    
+    // Split by newlines first
+    const lines = text.split('\n');
+    
+    return lines.map((line, index) => (
+      <React.Fragment key={index}>
+        {query && query.trim() ? highlightText(line, query) : line}
+        {index < lines.length - 1 && <br />}
+      </React.Fragment>
+    ));
+  };
+
   // Fetch memory data for each type
   const fetchMemoryData = async (memoryType) => {
     try {
@@ -501,7 +516,7 @@ const ExistingMemory = ({ settings }) => {
             ) : (
               <div className="memory-understanding-display">
                 <div className="memory-understanding">
-                  {highlightText(item.understanding || item.content, searchQuery)}
+                  {renderTextWithNewlines(item.understanding || item.content, searchQuery)}
                 </div>
               </div>
             )}

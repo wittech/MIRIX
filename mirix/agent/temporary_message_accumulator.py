@@ -51,6 +51,7 @@ class TemporaryMessageAccumulator:
         """Add a message to temporary storage."""
         if self.needs_upload and self.upload_manager is not None:
             if 'image_uris' in full_message and full_message['image_uris']:
+                # Handle image uploads with optional sources information
                 if async_upload:
                     image_file_ref_placeholders = [self.upload_manager.upload_file_async(image_uri, timestamp) for image_uri in full_message['image_uris']]
                 else:
@@ -82,8 +83,10 @@ class TemporaryMessageAccumulator:
                 audio_segment = None
 
             with self._temporary_messages_lock:
+                sources = full_message.get('sources')
                 self.temporary_messages.append(
                     (timestamp, {'image_uris': image_file_ref_placeholders,
+                                 'sources': sources,
                                  'audio_segments': audio_segment,
                                  'message': full_message['message']})
                 )
@@ -112,9 +115,12 @@ class TemporaryMessageAccumulator:
             voice_count = len(voice_files)
             
             with self._temporary_messages_lock:
+                sources = full_message.get('sources')
+                image_uris = full_message.get('image_uris', [])
                 self.temporary_messages.append(
                     (timestamp, {
-                        'image_uris': full_message.get('image_uris', []),
+                        'image_uris': image_uris,
+                        'sources': sources,
                         'audio_segments': full_message.get('voice_files', []),
                         'message': full_message['message']
                     })
@@ -466,15 +472,30 @@ class TemporaryMessageAccumulator:
     
     def _build_memory_message(self, ready_to_process, voice_content):
         """Build the message content for memory agents."""
-        # Collect all content from ready items
-        images_content = []
+        # Collect content organized by source
+        images_by_source = {}  # source_name -> [(timestamp, file_refs)]
         text_content = []
         audio_content = []
-        
+
         for timestamp, item in ready_to_process:
-            # Handle images
+            # Handle images with sources
             if 'image_uris' in item and item['image_uris']:
-                images_content.append((timestamp, item['image_uris']))
+                sources = item.get('sources', [])
+                image_uris = item['image_uris']
+                
+                # If we have sources, group images by source
+                if sources and len(sources) == len(image_uris):
+                    for source, file_ref in zip(sources, image_uris):
+                        if source not in images_by_source:
+                            images_by_source[source] = []
+                        images_by_source[source].append((timestamp, file_ref))
+                else:
+                    # Fallback: if no sources or mismatch, group under generic name
+                    generic_source = "Screenshots"
+                    if generic_source not in images_by_source:
+                        images_by_source[generic_source] = []
+                    for file_ref in image_uris:
+                        images_by_source[generic_source].append((timestamp, file_ref))
             
             # Handle text messages
             if 'message' in item and item['message']:
@@ -497,23 +518,29 @@ class TemporaryMessageAccumulator:
         # Build the structured message for memory agents
         message_parts = []
         
-        # Add screenshots if any
-        if images_content:
-            # Add introductory text
+        # Add screenshots grouped by source
+        if images_by_source:
+            # Add general introductory text
             message_parts.append({
                 'type': 'text',
                 'text': 'The following are the screenshots taken from the computer of the user:'
             })
             
-            for idx, (timestamp, file_refs) in enumerate(images_content):
-                # Add timestamp info
+            # Group by source application
+            for source_name, source_images in images_by_source.items():
+                # Add source-specific header
                 message_parts.append({
                     'type': 'text',
-                    'text': f"Timestamp: {timestamp} Image Index {idx}:"
+                    'text': f"These are the screenshots from {source_name}:"
                 })
                 
-                # Add each image
-                for file_ref in file_refs:
+                # Add each image with its timestamp
+                for timestamp, file_ref in source_images:
+                    message_parts.append({
+                        'type': 'text',
+                        'text': f"Timestamp: {timestamp}"
+                    })
+                    
                     message_parts.append({
                         'type': 'google_cloud_file_uri',
                         'google_cloud_file_uri': file_ref.uri

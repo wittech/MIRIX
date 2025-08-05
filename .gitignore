@@ -30,3 +30,4 @@ results/
 data/
 mirix_env/
 local_evaluations
+.claude/
